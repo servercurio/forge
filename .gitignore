@@ -1,0 +1,78 @@
+####################################################################################################
+# Hugo                                                                                             #
+####################################################################################################
+
+# Generated site output
+/public/
+/resources/_gen/
+/assets/jsconfig.json
+hugo_stats.json
+
+# Hugo build lock
+/.hugo_build.lock
+
+# Hugo binary, if vendored locally
+hugo.exe
+hugo.darwin
+hugo.linux
+
+####################################################################################################
+# Node (PostCSS / Tailwind / asset pipeline, if used by the theme)                                 #
+####################################################################################################
+
+node_modules/
+npm-debug.log*
+yarn-error.log
+.pnpm-store/
+package-lock.json.bak
+
+####################################################################################################
+# Editors & tooling                                                                                #
+####################################################################################################
+
+# JetBrains
+.idea/
+*.iml
+
+# VS Code (keep shared workspace config)
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+*.code-workspace
+
+# Vim
+[._]*.s[a-v][a-z]
+!*.svg
+[._]*.sw[a-p]
+Session.vim
+.netrwhist
+
+####################################################################################################
+# OS cruft                                                                                         #
+####################################################################################################
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+ehthumbs.db
+[Dd]esktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*~
+.directory
+.Trash-*
+
+####################################################################################################
+# Custom Ignore Rules (Add additional definitions below)                                           #
+####################################################################################################
+
+dist/
+
+# Claude Code — local-only settings (per-developer overrides)
+.claude/settings.local.json

@@ -1,0 +1,10 @@
+# Code owners for forge.
+#
+# This file is consumed by GitHub to auto-request reviews on pull requests.
+# Add specific paths above the catch-all rule when you want a different set
+# of reviewers for that area.
+
+* @nathanklick
+
+/.github/ @nathanklick
+/.github/workflows/ @nathanklick
