@@ -10,7 +10,7 @@ This repository uses GitHub's [private vulnerability reporting](https://docs.git
 2. Provide a clear description of the issue, the affected page or asset, and a minimal reproduction (commit hash, URL, sample content, etc.).
 3. Suggest an impact assessment if you are able (CVSS vector or plain-language severity).
 
-If you cannot use GitHub's reporting flow, email the maintainer at **nathan@theklickfamily.com** with the subject line `[SECURITY] forge`. Encrypted mail is welcome; ask for a current public key in your initial (unencrypted) message.
+If you cannot use GitHub's reporting flow, email the maintainer at **nathan.klick@servercurio.com** with the subject line `[SECURITY] forge`. Encrypted mail is welcome; ask for a current public key in your initial (unencrypted) message.
 
 ## What to Expect
 
