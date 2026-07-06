@@ -4,11 +4,7 @@
 
 # forge
 
-Project documentation, design, and the website for the Server Curio project family — the
-[`go-echo-starter`](https://github.com/servercurio/go-echo-starter),
-[`go-cli-starter`](https://github.com/servercurio/go-cli-starter), and
-[`go-library-starter`](https://github.com/servercurio/go-library-starter) templates and related
-work.
+Project documentation, design assets, and the website for the Server Curio project.
 
 This repository is intentionally minimal. It currently holds only the configuration and meta files
 that every Server Curio repository shares; the [Hugo](https://gohugo.io) site is built on top of
@@ -17,6 +13,9 @@ this foundation.
 ## Contents
 
 - `CLAUDE.md` + `.claude/` — guidance for AI agents working in the repository
+- `CONTRIBUTING.md` — contribution, commit-signing, and pull-request guide
+- `SECURITY.md` — vulnerability reporting policy
+- `CODE_OF_CONDUCT.md` — community standards
 - `.github/workflows/` — CI; PR-title formatting checks
 - `.github/CODEOWNERS` — review routing
 - `.gitignore` — Hugo / Node / editor / OS ignore rules
@@ -38,10 +37,12 @@ See [`.claude/build-commands.md`](.claude/build-commands.md) for the full comman
 
 ## Contributing
 
-Commits must be **GPG-signed** and carry a **DCO `Signed-off-by:`** trailer; a per-clone
-`prepare-commit-msg` hook appends the trailer automatically (see
-[`.claude/git-hooks.md`](.claude/git-hooks.md)). Pull-request titles follow the conventional-commit
-grammar and are validated in CI.
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for local setup, the required commit-signing (GPG + DCO)
+and git-hook steps, and the pull-request workflow. Participation is governed by our
+[Code of Conduct](CODE_OF_CONDUCT.md).
+
+To report a vulnerability, follow the private process in [`SECURITY.md`](SECURITY.md) — please don't
+open a public issue.
 
 ## License
 
