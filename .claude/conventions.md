@@ -5,7 +5,7 @@
 - **Design assets are source-controlled, generated output is not.** Commit `.svg` sources and
   original design files; the rendered site (`public/`, `resources/_gen/`) is gitignored and
   produced by `hugo`.
-- **One source of truth for the logo.** `docs/logo.svg` is the canonical brand mark. The site
+- **One source of truth for the logo.** `docs/images/logo.svg` is the canonical brand mark. The site
   references it (or a copy under `assets/`/`static/`); don't fork divergent copies.
 - **Prefer relative links** between content pages so the site builds correctly under any base URL.
 - **Accessibility is not optional.** Every image carries meaningful `alt` text; SVGs used as
