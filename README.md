@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/logo.svg" alt="Server Curio — Forge" width="600">
+  <img src="docs/images/logo.svg" alt="Server Curio — Forge" width="600">
 </p>
 
 # forge
@@ -19,7 +19,7 @@ this foundation.
 - `.github/workflows/` — CI; PR-title formatting checks
 - `.github/CODEOWNERS` — review routing
 - `.gitignore` — Hugo / Node / editor / OS ignore rules
-- `docs/logo.svg` — canonical brand mark
+- `docs/images/logo.svg` — canonical brand mark
 - `LICENSE` — Apache License 2.0
 
 ## Getting started

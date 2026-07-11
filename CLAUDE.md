@@ -23,7 +23,7 @@ presentation repository built on [Hugo](https://gohugo.io) — not application c
 
 The repository is intentionally **minimal**: it currently ships only its configuration and meta
 files (this file, the `.claude/` guidance, `.gitignore`, `CODEOWNERS`, the PR-formatting workflow,
-`LICENSE`, `README.md`, and the brand mark at `docs/logo.svg`). The Hugo site is added on top of
+`LICENSE`, `README.md`, and the brand mark at `docs/images/logo.svg`). The Hugo site is added on top of
 this foundation.
 
 When asked to add functionality, keep the repository focused on documentation, design, and the
@@ -35,7 +35,7 @@ project repositories, not here.
 - **New page**: add a Markdown file under `content/` with appropriate front matter
   (`hugo new content <section>/<name>.md`). Keep presentation in `layouts/`/`assets/`, not inline.
 - **New design asset**: commit the source (`.svg` preferred for marks and diagrams) under `docs/`
-  or `assets/`. `docs/logo.svg` is the canonical brand mark — reference it rather than forking
+  or `assets/`. `docs/images/logo.svg` is the canonical brand mark — reference it rather than forking
   copies.
 - **New CI workflow**: file under `.github/workflows/` following the numeric-prefix convention
   (200 = PR-triggered, 300 = main-branch push, 100 = operational/release, 800 = reusable).
@@ -47,5 +47,5 @@ project repositories, not here.
 
 - Keep the repository minimal. Don't scaffold a full Hugo site, vendor a theme, or add tooling
   unless the task explicitly asks for it.
-- `docs/logo.svg` is the shared Server Curio brand mark with the "Forge" wordmark. Don't restyle
+- `docs/images/logo.svg` is the shared Server Curio brand mark with the "Forge" wordmark. Don't restyle
   the mark itself; only the tagline text differs from sibling repositories.

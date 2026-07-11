@@ -6,7 +6,7 @@ directories as they are first needed rather than adding empty placeholders.
 
 ## Present today
 
-- `docs/` — Non-site documentation assets and the canonical brand mark (`logo.svg`). The README and
+- `docs/` — Non-site documentation assets. The canonical brand mark lives at `images/logo.svg`. The README and
   the future site reference this logo.
 - `.github/workflows/` — CI workflows. `200-flow-pull-request-formatting.yaml` validates PR titles
   against the conventional-commit grammar. Follow the numeric-prefix naming convention when adding

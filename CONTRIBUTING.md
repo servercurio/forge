@@ -95,7 +95,7 @@ See [`.claude/conventions.md`](.claude/conventions.md). Highlights:
 - Author content as Markdown under `content/`; keep presentation in `layouts/`/`assets/`.
 - Commit design **sources** (`.svg`, originals); generated output (`public/`, `resources/_gen/`) is
   gitignored.
-- `docs/logo.svg` is the canonical brand mark — reference it rather than forking copies.
+- `docs/images/logo.svg` is the canonical brand mark — reference it rather than forking copies.
 - Accessibility is required: meaningful `alt` text, `<title>` on content SVGs, WCAG AA contrast.
 
 ## Reporting security issues
