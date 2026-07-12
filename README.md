@@ -19,6 +19,7 @@ this foundation.
 - `.github/workflows/` — CI; PR-title formatting checks
 - `.github/CODEOWNERS` — review routing
 - `.gitignore` — Hugo / Node / editor / OS ignore rules
+- `docs/design/` — design documents and RFCs (numeric-prefix series)
 - `docs/images/logo.svg` — canonical brand mark
 - `LICENSE` — Apache License 2.0
 
