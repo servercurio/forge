@@ -100,6 +100,7 @@ See [`.claude/conventions.md`](.claude/conventions.md). Highlights:
 - Commit design **sources** (`.svg`, originals); generated output (`public/`, `resources/_gen/`) is
   gitignored.
 - `docs/images/logo.svg` is the canonical brand mark — reference it rather than forking copies.
+  `docs/images/logo-mark.svg` is the SC mark alone, for square and small-format uses.
 - Design documents live under `docs/design/`; follow [`docs/design/README.md`](docs/design/README.md)
   to add one.
 - Every file starts with an SPDX license header (`SPDX-License-Identifier: Apache-2.0`); the License

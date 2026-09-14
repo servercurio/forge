@@ -11,6 +11,7 @@
   produced by `hugo`.
 - **One source of truth for the logo.** `docs/images/logo.svg` is the canonical brand mark. The site
   references it (or a copy under `assets/`/`static/`); don't fork divergent copies.
+  `docs/images/logo-mark.svg` is the SC mark extracted verbatim from it — keep its paths identical.
 - **Prefer relative links** between content pages so the site builds correctly under any base URL.
 - **Accessibility is not optional.** Every image carries meaningful `alt` text; SVGs used as
   content carry a `<title>`; color choices meet WCAG AA contrast.
