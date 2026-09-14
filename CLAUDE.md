@@ -21,14 +21,17 @@ and procedural guidance that isn't captured in the agent reference docs:
 
 ## What this project is
 
-`forge` is the home for **project documentation, design assets, and the website** of the Server
-Curio project family (the `go-*-starter` templates and related work). It is a content and
-presentation repository built on [Hugo](https://gohugo.io) — not application code.
+`forge` is the home for **project documentation, design assets, and the website** of Forge, the
+Server Curio infrastructure management product. It is a content and presentation repository built
+on [Hugo](https://gohugo.io) — not application code. Forge's code lives in separate `forge-*`
+repositories seeded from the external `go-*-starter` baselines; see
+[`docs/design/0001-project-repositories.md`](docs/design/0001-project-repositories.md).
 
 The repository is intentionally **minimal**: it currently ships only its configuration and meta
 files (this file, the `.claude/` guidance, `.gitignore`, `CODEOWNERS`, the PR-formatting workflow,
-`LICENSE`, `README.md`, and the brand mark at `docs/images/logo.svg`). The Hugo site is added on top of
-this foundation.
+the Dependabot config, `LICENSE`, `README.md`, `CONTRIBUTING.md`, `SECURITY.md`,
+`CODE_OF_CONDUCT.md`), the design documents under `docs/design/`, and the brand mark at
+`docs/images/logo.svg`. The Hugo site is added on top of this foundation.
 
 When asked to add functionality, keep the repository focused on documentation, design, and the
 site. Don't introduce application code, backend services, or persistence — those belong in the
@@ -38,6 +41,8 @@ project repositories, not here.
 
 - **New page**: add a Markdown file under `content/` with appropriate front matter
   (`hugo new content <section>/<name>.md`). Keep presentation in `layouts/`/`assets/`, not inline.
+- **New design doc**: copy `docs/design/TEMPLATE.md` to `docs/design/NNNN-<slug>.md` using the next
+  free number, and add a row to the index in `docs/design/README.md`.
 - **New design asset**: commit the source (`.svg` preferred for marks and diagrams) under `docs/`
   or `assets/`. `docs/images/logo.svg` is the canonical brand mark — reference it rather than forking
   copies.
