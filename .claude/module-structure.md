@@ -12,10 +12,16 @@ directories as they are first needed rather than adding empty placeholders.
 
 - `docs/` — Non-site documentation assets. The canonical brand mark lives at `images/logo.svg`. The README and
   the future site reference this logo.
+- `docs/design/` — Numbered design documents (`NNNN-<slug>.md`), indexed by `design/README.md` and
+  started from `design/TEMPLATE.md`.
 - `.github/workflows/` — CI workflows. `200-flow-pull-request-formatting.yaml` validates PR titles
   against the conventional-commit grammar. Follow the numeric-prefix naming convention when adding
   workflows (200 = PR-triggered, 300 = main-branch push, 100 = operational/release, 800 = reusable).
+- `.github/dependabot.yml` — Weekly GitHub Actions version updates with `ci`-prefixed commits,
+  grouped into minor/patch and major updates.
 - `.github/CODEOWNERS` — Review routing.
+- `README.md`, `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, `LICENSE` — Root community
+  and policy documents.
 - `.claude/` — Agent guidance (this file and its siblings) plus `settings.json`.
 
 ## Intended Hugo layout (create as needed)
