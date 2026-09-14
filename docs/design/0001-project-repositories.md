@@ -91,25 +91,29 @@ identity/token exchanges, and directive pulls — enters through `forge-gateway`
 authentication and authorization before routing to `forge-identity`, `forge-inventory`,
 `forge-provisioner`, or other domain services.
 
+Agents use a dedicated `forge-gateway` listener authenticated with mutual TLS, using per-agent
+certificates issued by `forge-identity` at enrollment. It is separate from the operator and third-party
+entry point, so managed hosts never share an ingress with administrators.
+
 ## Repository inventory
 
-| Repository               | Axis · Category                    | Purpose                                                                                                                                                                                                                                                                                                            | Starter baseline                 |
-|--------------------------|------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------|
-| `forge` (this)           | Platform · Docs & site             | Documentation, design assets, website; shared-meta source of truth                                                                                                                                                                                                                                                 | — (already exists)               |
-| `forge-api-schema`       | Platform · Shared library          | API contracts (protobuf/OpenAPI) — the inter-service and client schema                                                                                                                                                                                                                                             | `go-library-starter`             |
-| `forge-sdk`              | Platform · Shared library          | Generated Go client SDK for the public API; used by `forge-cli`, `forge-agent`, and 3rd-party clients                                                                                                                                                                                                              | `go-library-starter`             |
-| `forge-common`           | Platform · Shared library          | Shared logging and telemetry components used by every Forge Go repository, so logs, traces, and metrics are consistent across services, the CLI, the agent, and plugins                                                                                                                                            | `go-library-starter`             |
-| `forge-gateway`          | Platform · Go service / API        | Edge/API gateway: routing, authN/Z enforcement, rate limiting                                                                                                                                                                                                                                                      | `go-echo-starter`                |
-| `forge-identity`         | Platform · Go service / API        | Internal identity **and IdP**: internal SAML/OIDC provider for platform users; accounts, API tokens, RBAC/tenancy, session issuance                                                                                                                                                                                | `go-echo-starter`                |
-| `forge-sso`              | Platform · Go service + site       | SSO federation broker: fronts login; authenticates against the internal `forge-identity` IdP or via SAML/OIDC exchange with an external IdP; hosts the login/SSO site                                                                                                                                              | `go-echo-starter`                |
-| `forge-cli`              | Platform · Go CLI                  | Operator CLI; talks to the gateway via `forge-sdk`                                                                                                                                                                                                                                                                 | `go-cli-starter`                 |
-| `forge-infrastructure`   | Platform · Infra / deployment      | Ansible playbooks, roles, and inventories (YAML) that deploy the Forge microservices **themselves**, gated by Open Policy Agent (OPA) policies. Forge's *own* operational infra                                                                                                                                    | — (Ansible + OPA; no Go starter) |
-| `forge-inventory`        | Product domain · Go service / API  | Source-of-truth catalog and schemas of the managed servers, network devices, and remote endpoints; upstream for `forge-agent`'s reported inventory                                                                                                                                                                 | `go-echo-starter`                |
-| `forge-provisioner`      | Product domain · Go service / API  | Desired-state authority: owns directives/rules (custom YAML + OPA policies + Tengo scripts) and reconciliation; enforces agentless devices directly, and hands directives to `forge-agent` for agent-capable endpoints                                                                                             | `go-echo-starter`                |
-| `forge-agent`            | Product domain · Go daemon         | Endpoint daemon on managed hosts that can run it; enforces desired-state directives (custom YAML + OPA policies + Tengo scripts) locally, collects inventory, and runs plugins as separate processes. Reaches `forge-inventory`, `forge-identity`, and `forge-provisioner` through `forge-gateway` via `forge-sdk` | `go-cli-starter`                 |
-| `forge-agent-plugin-sdk` | Product domain · Shared library    | Plugin interface/contract + host-side helpers that every agent plugin builds against — the stable extension point for `forge-agent`                                                                                                                                                                                | `go-library-starter`             |
-| `forge-agent-plugins`    | Product domain · Plugin collection | First-party / officially-maintained agent plugin executables, built against `forge-agent-plugin-sdk`                                                                                                                                                                                                               | `go-cli-starter`                 |
-| `forge-plugin-starter`   | Product domain · Template          | Project-owned scaffold third parties clone to author a new agent plugin executable (pre-wired to `forge-agent-plugin-sdk`)                                                                                                                                                                                         | `go-cli-starter`                 |
+| Repository               | Axis · Category                    | Purpose                                                                                                                                                                                                                                                                                                                                       | Starter baseline                 |
+|--------------------------|------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------|
+| `forge` (this)           | Platform · Docs & site             | Documentation, design assets, website; shared-meta source of truth                                                                                                                                                                                                                                                                            | — (already exists)               |
+| `forge-api-schema`       | Platform · Shared library          | API contracts (protobuf/OpenAPI) — the inter-service and client schema                                                                                                                                                                                                                                                                        | `go-library-starter`             |
+| `forge-sdk`              | Platform · Shared library          | Generated Go client SDK for the public API, published as a single Go module; used by `forge-cli`, `forge-agent`, and 3rd-party clients                                                                                                                                                                                                        | `go-library-starter`             |
+| `forge-common`           | Platform · Shared library          | Shared logging and telemetry: wraps the starters' zerolog logging, correlates logs with traces, and exports OpenTelemetry data over OTLP/HTTP without gRPC; used by every Forge Go repository                                                                                                                                                 | `go-library-starter`             |
+| `forge-gateway`          | Platform · Go service / API        | Edge/API gateway: routing, authN/Z enforcement, rate limiting; separate mutual-TLS ingress for agents                                                                                                                                                                                                                                         | `go-echo-starter`                |
+| `forge-identity`         | Platform · Go service / API        | Internal identity **and IdP**: internal SAML/OIDC provider for platform users; accounts, API tokens, RBAC/tenancy, session issuance                                                                                                                                                                                                           | `go-echo-starter`                |
+| `forge-sso`              | Platform · Go service + site       | SSO federation broker: fronts login; authenticates against the internal `forge-identity` IdP or via SAML/OIDC exchange with an external IdP; hosts the login/SSO site                                                                                                                                                                         | `go-echo-starter`                |
+| `forge-cli`              | Platform · Go CLI                  | Operator CLI; talks to the gateway via `forge-sdk`                                                                                                                                                                                                                                                                                            | `go-cli-starter`                 |
+| `forge-infrastructure`   | Platform · Infra / deployment      | Ansible playbooks, roles, and inventories (YAML) that deploy the Forge microservices **themselves**, gated by Open Policy Agent (OPA) policies. Forge's *own* operational infra                                                                                                                                                               | — (Ansible + OPA; no Go starter) |
+| `forge-inventory`        | Product domain · Go service / API  | Source-of-truth catalog and schemas of the managed servers, network devices, and remote endpoints; upstream for `forge-agent`'s reported inventory                                                                                                                                                                                            | `go-echo-starter`                |
+| `forge-provisioner`      | Product domain · Go service / API  | Desired-state authority: owns directives/rules (custom YAML + OPA policies + Tengo scripts) and reconciliation; enforces agentless devices directly, and hands directives to `forge-agent` for agent-capable endpoints                                                                                                                        | `go-echo-starter`                |
+| `forge-agent`            | Product domain · Go daemon         | Endpoint daemon on managed hosts that can run it; enforces desired-state directives (custom YAML + OPA policies + Tengo scripts) locally, collects inventory, and runs plugins as separate processes. Reaches `forge-inventory`, `forge-identity`, and `forge-provisioner` through `forge-gateway`'s mutual-TLS agent ingress via `forge-sdk` | `go-cli-starter`                 |
+| `forge-agent-plugin-sdk` | Product domain · Shared library    | Plugin interface/contract + host-side helpers that every agent plugin builds against — the stable extension point for `forge-agent`                                                                                                                                                                                                           | `go-library-starter`             |
+| `forge-agent-plugins`    | Product domain · Plugin collection | First-party / officially-maintained agent plugin executables, built against `forge-agent-plugin-sdk`                                                                                                                                                                                                                                          | `go-cli-starter`                 |
+| `forge-plugin-starter`   | Product domain · Template          | Project-owned scaffold third parties clone to author a new agent plugin executable (pre-wired to `forge-agent-plugin-sdk`)                                                                                                                                                                                                                    | `go-cli-starter`                 |
 
 A few decisions are baked into the table above and worth calling out explicitly:
 
@@ -143,11 +147,18 @@ is covered by exactly one path with no overlapping authority.
 `forge-provisioner` and `forge-agent` share one format for directives, separate from the Ansible used
 to deploy Forge itself:
 
-- **Custom YAML** — Forge's own schema describing the desired state of managed endpoints.
-- **OPA policies** — Rego policies that validate and authorize directives before they are enforced.
-  OPA returns policy decisions; it does not change anything itself.
+- **Custom YAML** — Forge's own schema describing the desired state of managed endpoints. Every
+  document declares an `apiVersion` (e.g. `forge.servercurio.com/v1alpha1`) and a `kind`, and the JSON
+  Schemas for each version are published from `forge-api-schema`.
+- **OPA policies** — Rego policies that validate and authorize directives, evaluated by OPA embedded as
+  a Go library in both services: `forge-provisioner` checks directives when they are written and before
+  dispatch, and `forge-agent` re-checks them on the host before enforcing. OPA returns policy
+  decisions; it does not change anything itself.
 - **Tengo scripts** — [Tengo](https://github.com/d5/tengo), a scripting language embedded in Go, for
-  logic YAML can't express. Both `forge-provisioner` and `forge-agent` embed the Tengo runtime.
+  logic YAML can't express. Both `forge-provisioner` and `forge-agent` embed the Tengo runtime. Scripts
+  may import only allowlisted pure standard-library modules (e.g. `text`, `math`, `json`) plus
+  Forge-provided functions — no `os` or file access — and every run has an allocation cap and a
+  timeout.
 
 ### Auth split
 
@@ -165,6 +176,12 @@ independently of the internal identity system.
 `forge-agent` is extensible via plugins. Plugins run as **separate processes** launched and supervised
 by `forge-agent`, so each plugin is its own executable and a failing plugin is isolated from the agent.
 
+Plugins talk to `forge-agent` over gRPC using [`hashicorp/go-plugin`](https://github.com/hashicorp/go-plugin).
+Before every launch, the agent verifies the plugin's
+[Sigstore](https://docs.sigstore.dev/cosign/signing/overview/) (cosign) signature against trusted
+publisher identities, then pins the binary's SHA-256 through go-plugin's
+[`SecureConfig`](https://pkg.go.dev/github.com/hashicorp/go-plugin#SecureConfig).
+
 - **`forge-agent-plugin-sdk`** — the stable contract plugins build against.
 - **`forge-agent-plugins`** — the first-party plugins maintained by the project.
 - **`forge-plugin-starter`** — the project-owned scaffold third parties clone to author their own.
@@ -172,6 +189,24 @@ by `forge-agent`, so each plugin is its own executable and a failing plugin is i
 Note the distinction from the `go-*-starter` family: those are **external, general-purpose** baselines
 that seed Forge repos, whereas `forge-plugin-starter` is a **Forge-specific, project-owned** template
 that depends on `forge-agent-plugin-sdk`.
+
+### Logging and telemetry (`forge-common`)
+
+`forge-common` gives every Forge Go repository the same logging and telemetry with as few dependencies
+as possible:
+
+- **Logging** — wraps the zerolog-based `logging` package the `go-*-starter` baselines already ship.
+  There is no official OpenTelemetry bridge for zerolog, so a zerolog
+  [`Hook`](https://pkg.go.dev/github.com/rs/zerolog#Hook) reads the span context from
+  [`Event.GetCtx()`](https://pkg.go.dev/github.com/rs/zerolog#Event.GetCtx) and adds `trace_id` and
+  `span_id` to each event logged with a context.
+- **Traces and metrics** — the OpenTelemetry Go API and official SDK; both signals are stable
+  ([project status](https://github.com/open-telemetry/opentelemetry-go#project-status)).
+- **Export** — a Forge-built OTLP/HTTP exporter on `go.opentelemetry.io/proto/slim/otlp` and `net/http`.
+  The official OTLP exporters link 15 third-party modules, including gRPC, even when exporting over
+  HTTP (measured on otel v1.46.0;
+  [opentelemetry-go#2579](https://github.com/open-telemetry/opentelemetry-go/issues/2579)). The custom
+  exporter is estimated at about 8, and Forge owns its retries, compression, TLS, and configuration.
 
 ### Forge's own infrastructure
 
@@ -183,6 +218,9 @@ Ansible project rather than a Go project, and it does not depend on `forge-agent
 - **OPA policies** — Rego policies evaluated against the Ansible inventories and variables before a run
   (for example, "`forge-identity` is never exposed on a public interface"), so non-compliant changes are
   blocked before they reach an environment.
+- **Execution** — [Conftest](https://www.conftest.dev) evaluates the OPA policies in pull-request CI; a
+  dedicated control node (e.g. [AWX](https://github.com/ansible/awx)) runs the merged playbooks, so
+  deployment credentials never live in CI.
 
 Deploying Forge with Ansible keeps the two axes fully separate: Forge does not depend on its own agent
 or provisioner to deploy itself.
@@ -227,22 +265,40 @@ A suggested order that keeps each step shippable and unblocks the next:
 5. **Enforcement** — `forge-provisioner`, then `forge-agent` and the plugin repos
    (`forge-agent-plugin-sdk`, `forge-agent-plugins`, `forge-plugin-starter`).
 
+## Resolved decisions
+
+Answers to this document's earlier open questions (2026-09-14). The sections above reflect them.
+
+- **Service decomposition depth** — Keep the current split. Revisit after the first domain slice
+  (`forge-inventory` + `forge-cli`) proves the full request loop.
+- **SDK modularity** — `forge-sdk` is a single Go module with one version: simplest to release while the
+  API is still changing, and it can be split per service later.
+- **Telemetry stack** — `forge-common` wraps the starters' zerolog logging, correlates logs with traces
+  through a zerolog hook, and uses the OpenTelemetry API and SDK with a Forge-built OTLP/HTTP exporter.
+  This was the lowest-dependency OpenTelemetry option measured, because the official OTLP exporters link
+  gRPC even over HTTP. See [Logging and telemetry](#logging-and-telemetry-forge-common).
+- **Ansible execution** — Conftest checks OPA policies in pull-request CI; a dedicated control node runs
+  the merged playbooks, keeping deployment credentials out of CI.
+- **OPA evaluation** — Embedded in both `forge-provisioner` and `forge-agent`, so a tampered or stale
+  directive is still caught on the host.
+- **Desired-state schema** — Kubernetes-style `apiVersion`/`kind` with JSON Schemas published from
+  `forge-api-schema`, supporting alpha/beta/stable stages and side-by-side versions.
+- **Tengo sandboxing** — Allowlisted pure standard-library modules plus Forge-provided functions, with an
+  allocation cap and a timeout on every run; no `os` or file access on managed hosts.
+- **Trust zones** — A dedicated mutual-TLS agent ingress on `forge-gateway`, with per-agent certificates
+  issued by `forge-identity`, kept apart from the operator and third-party entry point.
+- **Plugin transport** — gRPC through `hashicorp/go-plugin`, which handles the handshake, process
+  lifecycle, and optional mutual TLS.
+- **Plugin signing** — Sigstore (cosign) signatures verified against trusted publisher identities, plus
+  SHA-256 pinning through go-plugin `SecureConfig` before every launch.
+
 ## Open questions
 
-- **Service decomposition depth** — is the current split right, or should some services merge/split?
-- **SDK modularity** — single module vs. multi-module `forge-sdk` (per-service clients).
-- **Telemetry stack** — which standards `forge-common` wraps (e.g. Go's
-  [`log/slog`](https://pkg.go.dev/log/slog) for structured logs and
-  [OpenTelemetry](https://opentelemetry.io/docs/) for traces and metrics), and how out-of-process
-  plugins propagate trace context to `forge-agent`.
-- **Ansible execution** — where playbooks run (CI runner vs. a dedicated control node) and how OPA
-  gates them (e.g. [Conftest](https://www.conftest.dev) in CI).
-- **Desired-state format** — schema and versioning of the custom YAML, whether OPA policies are
-  evaluated in `forge-provisioner`, `forge-agent`, or both, and how Tengo scripts are sandboxed.
-- **Trust zones** — how the Platform/Product-domain boundary maps to network trust zones, especially
-  the `forge-agent` → `forge-gateway` ingress from managed hosts.
-- **Plugin transport and isolation** — plugins run out-of-process; still open are the transport (e.g.
-  gRPC via `hashicorp/go-plugin`), process isolation, and the plugin signing model.
+- **Agent enrollment** — how a new `forge-agent` proves its identity to `forge-identity` to receive its
+  first mutual-TLS certificate (e.g. one-time enrollment tokens), and how agent certificates rotate.
+- **Custom exporter footprint** — confirm the estimated ~8 linked third-party modules once the
+  OTLP/HTTP exporter in `forge-common` is built, and whether to adopt the official exporter if
+  opentelemetry-go#2579 is fixed.
 
 ## References
 
@@ -256,10 +312,21 @@ A suggested order that keeps each step shippable and unblocks the next:
   language used for `forge-infrastructure` deployment policies and desired-state directive policies.
 - [Conftest](https://www.conftest.dev) — runs OPA policies against structured configuration files,
   such as Ansible YAML, typically in CI.
+- [AWX](https://github.com/ansible/awx) — self-hosted Ansible execution server; an example control node.
 - [Tengo](https://github.com/d5/tengo) — embeddable Go scripting language used in desired-state
   directives by `forge-provisioner` and `forge-agent`.
-- [`log/slog`](https://pkg.go.dev/log/slog) — Go standard-library structured logging package.
+- [zerolog](https://github.com/rs/zerolog) — structured logger used by the `go-*-starter` logging
+  packages and wrapped by `forge-common`.
 - [OpenTelemetry](https://opentelemetry.io/docs/) — vendor-neutral standard for traces, metrics, and
   logs.
+- [opentelemetry-go#2579](https://github.com/open-telemetry/opentelemetry-go/issues/2579) — upstream
+  issue: the OTLP/HTTP exporters depend on gRPC.
+- [`go.opentelemetry.io/proto/slim/otlp`](https://github.com/open-telemetry/opentelemetry-proto-go/blob/main/slim/otlp/go.mod)
+  — OTLP protobuf types without gRPC; the basis for the custom exporter.
 - [`hashicorp/go-plugin`](https://github.com/hashicorp/go-plugin) — an out-of-process Go plugin system
   over RPC/gRPC.
+- [Sigstore cosign](https://docs.sigstore.dev/cosign/signing/overview/) — artifact signing used for
+  plugin executables.
+- [Kubernetes API versioning](https://kubernetes.io/docs/reference/using-api/#api-versioning) — model
+  for `apiVersion`/`kind` desired-state documents.
+- [JSON Schema](https://json-schema.org/) — schema format published from `forge-api-schema`.
