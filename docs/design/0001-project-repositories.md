@@ -81,6 +81,7 @@ cross-repo coordination (the shared API contract and SDK exist precisely to abso
    agent plugins (separate processes, built on forge-agent-plugin-sdk)
 
    Shared contract/clients: forge-api-schema ──► forge-sdk (used by forge-cli, forge-agent, 3rd party)
+   Shared libraries:        forge-common (logging, telemetry) ──► every Forge Go repository
    Forge's own deployment:  forge-infrastructure (Ansible + OPA policies)
    Managed desired state:   custom YAML + OPA policies + Tengo ──► forge-provisioner, forge-agent
 ```
@@ -97,6 +98,7 @@ authentication and authorization before routing to `forge-identity`, `forge-inve
 | `forge` (this)           | Platform · Docs & site             | Documentation, design assets, website; shared-meta source of truth                                                                                                                                                                                                                                                 | — (already exists)               |
 | `forge-api-schema`       | Platform · Shared library          | API contracts (protobuf/OpenAPI) — the inter-service and client schema                                                                                                                                                                                                                                             | `go-library-starter`             |
 | `forge-sdk`              | Platform · Shared library          | Generated Go client SDK for the public API; used by `forge-cli`, `forge-agent`, and 3rd-party clients                                                                                                                                                                                                              | `go-library-starter`             |
+| `forge-common`           | Platform · Shared library          | Shared logging and telemetry components used by every Forge Go repository, so logs, traces, and metrics are consistent across services, the CLI, the agent, and plugins                                                                                                                                            | `go-library-starter`             |
 | `forge-gateway`          | Platform · Go service / API        | Edge/API gateway: routing, authN/Z enforcement, rate limiting                                                                                                                                                                                                                                                      | `go-echo-starter`                |
 | `forge-identity`         | Platform · Go service / API        | Internal identity **and IdP**: internal SAML/OIDC provider for platform users; accounts, API tokens, RBAC/tenancy, session issuance                                                                                                                                                                                | `go-echo-starter`                |
 | `forge-sso`              | Platform · Go service + site       | SSO federation broker: fronts login; authenticates against the internal `forge-identity` IdP or via SAML/OIDC exchange with an external IdP; hosts the login/SSO site                                                                                                                                              | `go-echo-starter`                |
@@ -111,8 +113,11 @@ authentication and authorization before routing to `forge-identity`, `forge-inve
 
 A few decisions are baked into the table above and worth calling out explicitly:
 
-- **No `forge-common`.** Shared internal libraries (config, logging, middleware, telemetry) are baked
-  into the `go-*-starter` baselines, so there is no separate common-library repository.
+- **One `forge-common` for logging and telemetry.** Logging and telemetry live in a single shared
+  library so every Forge repo emits consistent logs, traces, and metrics. Forge repos swap the
+  starter's own logging and telemetry for `forge-common` during bootstrap; the `go-*-starter`
+  baselines stay general-purpose and never depend on it. Other shared concerns (config, middleware)
+  stay in the starters.
 - **`go-cli-starter` covers daemons.** It provides both CLI and long-running daemon scaffolding, so
   `forge-agent` and every plugin executable start from it.
 - **`forge-infrastructure` has no Go starter.** It is Ansible (YAML) playbooks and OPA policies, not a
@@ -191,7 +196,8 @@ or provisioner to deploy itself.
   (200 = PR-triggered, 300 = main-push, 100 = operational/release, 800 = reusable), `CODEOWNERS`, and
   the Apache-2.0 `LICENSE`.
 - **One source of truth per contract.** The wire contract lives once in `forge-api-schema`; clients
-  consume the generated `forge-sdk` rather than re-deriving types.
+  consume the generated `forge-sdk` rather than re-deriving types. Logging and telemetry are likewise
+  implemented once, in `forge-common`, rather than per repository.
 
 ## Bootstrapping a repository from a starter
 
@@ -202,15 +208,17 @@ The repeatable procedure for standing up any repository in the inventory:
 2. **Rename** the Go module path and any template placeholders to the `forge-<name>` identity.
 3. **Adopt shared meta** from `forge` — signing config, CI workflows (numeric-prefix), `CODEOWNERS`,
    license, and the contribution/security docs.
-4. **Wire the contract** — services and clients pin `forge-api-schema` / `forge-sdk`; plugins pin
-   `forge-agent-plugin-sdk`.
+4. **Wire shared dependencies** — services and clients pin `forge-api-schema` / `forge-sdk`; plugins
+   pin `forge-agent-plugin-sdk`; every Go repository replaces the starter's logging and telemetry
+   with `forge-common`.
 5. **Register ownership** in `CODEOWNERS` and enable branch protection + PR-title validation.
 
 ## Sequencing / phases
 
 A suggested order that keeps each step shippable and unblocks the next:
 
-1. **Contract first** — `forge-api-schema`, then `forge-sdk`. Everything downstream depends on these.
+1. **Contract and shared libraries first** — `forge-api-schema`, then `forge-sdk`, alongside
+   `forge-common`. Everything downstream depends on these.
 2. **Operational infra** — `forge-infrastructure` Ansible playbooks and OPA policies, so the first
    services deploy through the intended path from day one.
 3. **Auth spine** — `forge-identity`, then `forge-sso` and `forge-gateway`, so requests can be
@@ -223,6 +231,10 @@ A suggested order that keeps each step shippable and unblocks the next:
 
 - **Service decomposition depth** — is the current split right, or should some services merge/split?
 - **SDK modularity** — single module vs. multi-module `forge-sdk` (per-service clients).
+- **Telemetry stack** — which standards `forge-common` wraps (e.g. Go's
+  [`log/slog`](https://pkg.go.dev/log/slog) for structured logs and
+  [OpenTelemetry](https://opentelemetry.io/docs/) for traces and metrics), and how out-of-process
+  plugins propagate trace context to `forge-agent`.
 - **Ansible execution** — where playbooks run (CI runner vs. a dedicated control node) and how OPA
   gates them (e.g. [Conftest](https://www.conftest.dev) in CI).
 - **Desired-state format** — schema and versioning of the custom YAML, whether OPA policies are
@@ -246,5 +258,8 @@ A suggested order that keeps each step shippable and unblocks the next:
   such as Ansible YAML, typically in CI.
 - [Tengo](https://github.com/d5/tengo) — embeddable Go scripting language used in desired-state
   directives by `forge-provisioner` and `forge-agent`.
+- [`log/slog`](https://pkg.go.dev/log/slog) — Go standard-library structured logging package.
+- [OpenTelemetry](https://opentelemetry.io/docs/) — vendor-neutral standard for traces, metrics, and
+  logs.
 - [`hashicorp/go-plugin`](https://github.com/hashicorp/go-plugin) — an out-of-process Go plugin system
   over RPC/gRPC.
