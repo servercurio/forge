@@ -21,6 +21,7 @@ alternatives considered, and tracks its status as the decision matures.
 | [0008](0008-forge-gateway.md)        | forge-gateway        | Draft  | 2026-09-15 |
 | [0009](0009-forge-inventory.md)      | forge-inventory      | Draft  | 2026-09-15 |
 | [0010](0010-forge-cli.md)            | forge-cli            | Draft  | 2026-09-15 |
+| [0011](0011-forge-provisioner.md)    | forge-provisioner    | Draft  | 2026-09-15 |
 
 ## Statuses
 

@@ -1,0 +1,378 @@
+# 0011 — forge-provisioner
+
+- **Status:** Draft
+- **Owner:** Nathan Klick
+- **Date:** 2026-09-15
+- **Summary:** `forge-provisioner` is Forge's single desired-state authority. It stores versioned YAML
+  documents, validates them with JSON Schema and embedded OPA, renders them with sandboxed Tengo, and
+  reconciles every endpoint from a PostgreSQL work queue. Agents pull signed per-endpoint bundles, and
+  agentless devices are enforced by in-process drivers.
+
+> An initial draft with concrete proposals, bounded by the
+> [Resolved decisions](0001-project-repositories.md#resolved-decisions) in 0001. Conventions other
+> repositories depend on are summarized in [CONVENTIONS.md](CONVENTIONS.md).
+
+## Context & goals
+
+0001 makes `forge-provisioner` the **single** desired-state authority with two enforcement paths
+([Desired-state model](0001-project-repositories.md#desired-state-model--one-authority-two-enforcement-paths)).
+It fixes the format as custom YAML with `apiVersion` and `kind`, OPA embedded as a Go library and checked
+at write time and before dispatch, and Tengo with allowlisted pure modules, an allocation cap, and a
+timeout ([Desired-state format](0001-project-repositories.md#desired-state-format)). Agents reach it only
+through `forge-gateway`'s mutual-TLS agent ingress. Both paths converge against `forge-inventory`.
+
+**Goals**
+
+- One authoritative store of desired state per tenant, with history and optimistic concurrency.
+- Deterministic rendering: the same documents and facts always produce the same bundle digest.
+- Fail-closed policy at write time, before dispatch, and (via the bundle) on the host.
+- Horizontally scalable reconciliation with no scheduler outside PostgreSQL.
+- Agentless enforcement whose credentials never leave the provisioner's trust boundary.
+
+**Non-goals**
+
+- On-host enforcement, plugins, and host inventory collection — [0012](0012-forge-agent.md).
+- The endpoint catalog and reported inventory — [0009](0009-forge-inventory.md).
+- Token formats, roles, and tenancy records — [0006](0006-forge-identity.md); routing and principal
+  propagation — [0008](0008-forge-gateway.md).
+- Deploying Forge itself — [0005](0005-forge-infrastructure.md).
+
+## Proposal
+
+### Responsibilities
+
+- **Document store** — CRUD, validation, revisions, and audit for desired-state documents.
+- **Targeting** — resolve label selectors against `forge-inventory` into per-endpoint desired state.
+- **Rendering and policy** — Tengo `render` scripts, JSON Schema validation, OPA `admission` and
+  `dispatch` policies.
+- **Dispatch** — signed directive bundles for agent endpoints; plan, apply, and verify for agentless ones.
+- **Drift** — compare desired state with agent reports, observed device state, and inventory facts.
+
+### Interfaces
+
+#### Document model
+
+Proposed kinds in `forge.servercurio.com/v1alpha1`, each with a JSON Schema at
+`schemas/forge.servercurio.com/v1alpha1/<kind>.schema.json` in [0002](0002-forge-api-schema.md):
+
+| Kind               | Purpose                                                                         |
+|--------------------|---------------------------------------------------------------------------------|
+| `DirectiveSet`     | A named set of resources, a target selector, a mode (`enforce` or `audit`)      |
+| `Policy`           | A Rego module with a phase: `admission`, `dispatch`, or `host`                  |
+| `Script`           | Tengo source with a phase (`render` or `host`), declared inputs, and limits     |
+| `DeviceConnection` | Driver, address, pinned TLS or SSH identity, and a credential reference         |
+| Resource kinds     | `File`, `Package`, `Service`, … for hosts; driver-defined kinds for devices     |
+
+Every resource inside a `DirectiveSet` is itself an `apiVersion`/`kind` document, so one validator
+covers both levels:
+
+```yaml
+apiVersion: forge.servercurio.com/v1alpha1
+kind: DirectiveSet
+metadata: { name: web-baseline, labels: { team: web } }
+spec:
+  mode: enforce
+  target: { selector: { matchLabels: { role: web } } }
+  resources:
+    - apiVersion: forge.servercurio.com/v1alpha1
+      kind: File
+      metadata: { name: nginx-conf }
+      spec:
+        path: /etc/nginx/nginx.conf
+        mode: "0644"
+        content: { scriptRef: nginx-conf-render, inputs: { workers: 4 } }
+      dependsOn: [nginx]
+```
+
+- **Decoding** — `go.yaml.in/yaml/v3` into `yaml.Node`; reject alias nodes (`AliasNode`), documents over
+  1 MiB, and unknown top-level fields; convert to JSON; validate with `santhosh-tekuri/jsonschema/v6`.
+- **Conflicts** — two sets that target one endpoint with the same `kind` and `metadata.name` are a
+  conflict reported at plan time, never resolved by last writer wins.
+- **Enforcement path** — each endpoint's path (`agent` or `agentless`) comes from `forge-inventory`.
+  Admission rejects host kinds targeted at agentless endpoints and device kinds at agent endpoints.
+- **Conversion** — the provisioner stores documents as written and converts between `apiVersion`s in
+  Go when a newer version exists (0002 assigns conversion here).
+
+#### HTTP API (`openapi/provisioner/v1alpha1/openapi.yaml`)
+
+| Method and path                                                  | Audience   | Notes                              |
+|------------------------------------------------------------------|------------|------------------------------------|
+| `GET, POST /provisioner/v1alpha1/directive-sets`                 | `operator` | list, create                       |
+| `GET, PUT, DELETE /provisioner/v1alpha1/directive-sets/{id}`     | `operator` | `PUT` requires `If-Match`          |
+| `… /provisioner/v1alpha1/policies`, `/scripts`, `/device-connections` | `operator` | same shape as directive sets  |
+| `POST /provisioner/v1alpha1/plans`                               | `operator` | dry run: affected endpoints, diff  |
+| `GET /provisioner/v1alpha1/endpoints/{endpointId}/desired-state` | `operator` | rendered, secrets redacted         |
+| `GET /provisioner/v1alpha1/endpoints/{endpointId}/status`        | `operator` | generation, drift, conditions      |
+| `POST /provisioner/v1alpha1/reconciliations`                     | `operator` | enqueue; `x-forge-idempotent`      |
+| `GET /provisioner/v1alpha1/directive-bundles/current`            | `agent`    | long poll, see below               |
+| `POST /provisioner/v1alpha1/enforcement-reports`                 | `agent`    | `x-forge-idempotent` by `reportId` |
+
+Writes return an `ETag` of the document generation and accept `If-Match`
+([RFC 9110](https://www.rfc-editor.org/rfc/rfc9110#name-conditional-requests)). Validation and policy
+failures are `422` problems with `errors[]` pointers and codes such as `policy_denied`.
+
+#### Directive bundles and how agents get them
+
+Agents pull; the provisioner never connects to hosts. `GET …/directive-bundles/current` has no agent ID
+in the path — the provisioner takes it from the verified SPIFFE ID the gateway forwards (0008), so one
+agent cannot request another's bundle. The agent sends `If-None-Match: "<digest>"` and
+`?waitSeconds=0..60`. The response is `304` or `200` with the bundle and an `ETag` of its digest.
+
+The bundle is a [DSSE](https://github.com/secure-systems-lab/dsse/blob/master/envelope.md) envelope
+(payload type `application/vnd.forge.directive-bundle.v1alpha1+json`) plus the signer's certificate
+chain. It is signed with the provisioner's own service key, whose certificate carries
+`spiffe://<environment-id>/service/forge-provisioner`. The payload holds `environmentId`, `tenantId`,
+`endpointId`, `agentId`, a per-endpoint monotonic `generation`, `issuedAt`, `notAfter` (default 7
+days), `mode`, rendered resources, `host`-phase policies and scripts, and plugin pins (name, version,
+SHA-256). Signing is an addition to 0001: OPA on the host catches a stale or out-of-policy directive,
+and the signature lets the agent reject one forged by a compromised gateway. DSSE needs only
+standard-library ECDSA and an estimated (unmeasured) 50 lines of code, so it adds no module.
+
+#### Reconciliation loop
+
+Level-triggered and idempotent, modeled on Kubernetes controllers
+([API conventions](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md)):
+
+1. **Enqueue** an endpoint when a targeting document changes, its inventory labels or facts change, an
+   agent reports drift or failure, or the resync interval (default 15 minutes) elapses.
+2. **Lease** — workers claim rows with `SELECT … FOR UPDATE SKIP LOCKED`
+   ([PostgreSQL](https://www.postgresql.org/docs/current/sql-select.html#SQL-FOR-UPDATE-SHARE)) and set
+   `lease_expires_at`, so replicas share the queue and a crashed worker's lease lapses.
+3. **Resolve** matching `DirectiveSet`s and the endpoint's facts from `forge-inventory`.
+4. **Render** `render`-phase scripts, validate every resource against its schema, and evaluate
+   `dispatch` policies. Any error, timeout, or `deny` stops the endpoint with a condition.
+5. **Dispatch** — for an agent, store a new signed bundle only if the digest changed. For agentless
+   devices, run the driver's `Observe` → `Plan` → `Apply` → `Observe`.
+6. **Record** status and requeue failures with exponential backoff (cap 30 minutes).
+
+Inventory changes arrive by polling a change cursor from [0009](0009-forge-inventory.md) (to be agreed);
+until it exists, the resync interval covers them.
+
+#### Policy (OPA)
+
+- **Library** — `github.com/open-policy-agent/opa/v1/rego` v1.20.2. Modules compile once per tenant
+  revision with `PrepareForEval`; each evaluation gets a context deadline (default 500 ms), which
+  `rego` turns into a topdown cancel.
+- **Contract** — packages `forge.admission`, `forge.dispatch`, and `forge.host`; each defines
+  `deny contains {"code": …, "message": …}`. Input is `document`, `principal`, `tenant`, `environment`
+  (`id`, `name`, `tier`), `endpoint` (`id`, `labels`, `facts`), and `now`. Errors, timeouts, and
+  non-set results deny.
+- **Layers** — platform policies embedded in the binary are evaluated first and cannot be disabled by
+  tenants; tenant `Policy` documents follow. Both must allow.
+- **Builtins** — `rego.Capabilities` removes `http.send`, `net.lookup_ip_addr`, `opa.runtime`,
+  `rand.intn`, `uuid.rfc4122`, and `time.now_ns` (time comes from `input.now`), so a policy using them
+  fails to compile. `rego.StrictBuiltinErrors(true)`; print statements only in `development`.
+
+```rego
+package forge.admission
+
+deny contains {"code": "command_denied", "message": msg} if {
+	input.environment.tier == "production"
+	some r in input.document.spec.resources
+	r.kind == "Command"
+	msg := sprintf("Command %q is not allowed in production", [r.metadata.name])
+}
+```
+
+#### Scripts (Tengo)
+
+- **Library** — `github.com/d5/tengo/v2` at pseudo-version `v2.17.1-0.20260429084800-8daf696551f2`.
+  The newest tag, `v3.0.0`, still declares module `github.com/d5/tengo/v2`, so Go refuses it; v2.17.0
+  (2024-02-29) lacks later fixes such as regex alternation (#460) and `int == float` (#477).
+- **Sandbox** — `SetImports(stdlib.GetModuleMap("text", "math", "json", "base64", "hex", "enum"))`;
+  `EnableFileImport(false)`; no `os`, `fmt` (prints), `times`, or `rand` (non-deterministic).
+  `SetMaxAllocs(100000)`, `SetMaxConstObjects(10000)`, source up to 64 KiB, output up to 1 MiB, and
+  `RunContext` with a 2 s deadline by default. Compiled scripts are cached and `Clone`d per run.
+- **Host functions** — a `forge` module with `facts()` (immutable endpoint facts), `input()`, and
+  `fail(message)`. Results must be JSON-encodable and are schema-validated like any other resource.
+
+#### Agentless drivers
+
+```go
+type Driver interface {
+	Kinds() []string // resource kinds this driver enforces
+	Observe(ctx context.Context, c Connection, rs []Resource) ([]Observed, error)
+	Plan(ctx context.Context, desired []Resource, observed []Observed) (Plan, error)
+	Apply(ctx context.Context, c Connection, p Plan) (Result, error)
+}
+```
+
+- **Built in, compiled in** — `http` (REST and JSON device and cloud APIs on `net/http`), `ssh` (CLI
+  over `golang.org/x/crypto/ssh`), and `netconf` ([RFC 6241](https://www.rfc-editor.org/rfc/rfc6241) over
+  SSH on `encoding/xml`). A new driver needs its own design note with its dependency cost.
+- **Safety** — one lease per device, a per-connection concurrency cap, and per-call timeouts.
+  `DirectiveSet.spec.mode: audit` runs `Observe` and `Plan` only.
+- **Observed state** is written back to `forge-inventory` through its `internal` API (0009), so both
+  enforcement paths converge against one catalog.
+
+### Dependencies
+
+- **Forge** — `forge-api-schema` (models, schemas, embedded document), `forge-sdk` (`pkg/tlsconfig`,
+  `pkg/revocation`, `pkg/enroll` for the service certificate, and the inventory client), `forge-common`
+  (`logging`, `environment`, `telemetry`).
+- **Starter** — Echo v5, pgx v5, bun, goose, as in `go-echo-starter`. Replace the starter's direct
+  `gopkg.in/yaml.v3` with `go.yaml.in/yaml/v3` v3.0.5, which the starter already lists as indirect and
+  OPA links anyway, so there is one YAML library.
+- **New, measured** on 2026-09-15 with throwaway `linux/amd64` modules (`CGO_ENABLED=0`, stripped),
+  counting modules in `go list -deps`:
+
+| Module                                   | Version        | Linked modules | Binary   | Notes                         |
+|------------------------------------------|----------------|----------------|----------|-------------------------------|
+| `open-policy-agent/opa/v1/rego`          | v1.20.2        | 26             | 22.0 MiB | 127 in `go list -m all`       |
+| `d5/tengo/v2`                            | pseudo-version | 1              | 3.4 MiB  | no requirements               |
+| `santhosh-tekuri/jsonschema/v6`          | v6.0.3         | +1 (`x/text`)  | —        | already chosen in 0002        |
+| All three                                | —              | 29             | 23.5 MiB | no gRPC                       |
+
+**OPA is heavy — flagged.** Its 26 modules include `lestrrat-go/jwx/v3` and five more `lestrrat-go`
+modules (for `io.jwt` builtins), `sirupsen/logrus`, `rcrowley/go-metrics`, `vektah/gqlparser/v2` (GraphQL
+builtins), `google.golang.org/protobuf`, and `sigs.k8s.io/yaml`. The `opa_no_oci` build tag did not
+change the count. 0001 settles on the OPA library, so the lighter Wasm route is only listed under
+Alternatives.
+
+### Data & storage
+
+PostgreSQL through the starter's pgx, bun, and goose. Every table has `tenant_id` first in its primary
+key.
+
+| Table                  | Contents                                                                           |
+|------------------------|------------------------------------------------------------------------------------|
+| `documents`            | `id`, `api_version`, `kind`, `name`, `generation`, `spec` (jsonb), `labels`, `sha256` |
+| `document_revisions`   | append-only copies of every accepted generation, with author and request ID        |
+| `endpoint_targets`     | materialized selector matches: endpoint → documents                                |
+| `directive_bundles`    | `endpoint_id`, `generation`, `digest`, `envelope` (bytea), `not_after`; last 10 kept |
+| `reconcile_queue`      | `endpoint_id`, `reason`, `due_at`, `lease_owner`, `lease_expires_at`, `attempts`   |
+| `endpoint_status`      | path, `applied_generation`, drift (`in_sync`, `drifted`, `failed`, `unknown`), conditions |
+| `enforcement_reports`  | monthly partitions, 30-day retention; digests of observed state, never content     |
+| `audit_events`         | append-only: principal, action, document, policy decision                          |
+
+Credentials for devices are **never** stored here or in bundles: `credentialRef` names a secret that a
+`SecretProvider` resolves at apply time. The first provider reads files mounted by
+`forge-infrastructure`.
+
+### Security
+
+- **Multi-tenancy** — the tenant comes from the verified principal, as 0002 proposes. Every repository
+  method requires a tenant ID, and PostgreSQL
+  [row-level security](https://www.postgresql.org/docs/current/ddl-rowsecurity.html) with
+  `SET LOCAL forge.tenant_id` per transaction is defense in depth.
+- **RBAC hooks** — the gateway authorizes each operation (0008). The provisioner additionally checks
+  permissions such as `provisioner.policies.write` from the forwarded principal (format per 0006), and
+  passes `principal` to `admission` policies for finer rules. Writing `Policy` and `Script` documents is
+  a separate permission from writing `DirectiveSet`s.
+- **Untrusted input** — size limits, alias rejection, strict schemas, OPA capability filtering, and the
+  Tengo sandbox above; fuzzing covers YAML decoding and DSSE parsing.
+- **Signing** — the bundle key is the renewing service key from `pkg/enroll`; it never leaves the
+  process. Agents verify the chain and SPIFFE ID ([0012](0012-forge-agent.md)).
+- **Devices** — TLS verification is mandatory and SSH host keys are pinned in `DeviceConnection`.
+  Skipping either is the last-resort feature `insecure-device-transport`.
+
+### Environment awareness
+
+Requires `name`, `tier`, `id`, and `caBundle` (it serves and makes mutual-TLS connections). Bundles carry
+`environmentId`, and agents reject any other. `DeviceConnection`s are per environment and never copied
+between them.
+
+| Setting                        | `production` / `staging`           | `test` / `development`     |
+|--------------------------------|------------------------------------|----------------------------|
+| Script and policy limit ceilings | fixed at defaults                | may be raised              |
+| Rego print statements          | off                                | `development` only         |
+| `insecure-device-transport`    | refused in `production` unless overridden | allowed, logged     |
+| OpenAPI UI                     | off                                | on                         |
+
+### Logging & telemetry
+
+Through `forge-common`. Fields `forge.tenant.id`, `forge.endpoint.id`, `forge.document.id`,
+`forge.bundle.generation`, and `forge.policy.decision`; specs and rendered content are logged only as
+digests. Metrics: `forge.provisioner.reconcile.duration`, `forge.provisioner.queue.depth`,
+`forge.provisioner.policy.duration`, `forge.provisioner.script.duration`, and
+`forge.provisioner.endpoints.drifted`.
+
+### Configuration
+
+Prefix `FORGE_PROVISIONER_`, plus the starter's `server` and `database` blocks and the library blocks
+from [CONVENTIONS.md](CONVENTIONS.md).
+
+| YAML                          | Variable                                          | Default   |
+|-------------------------------|---------------------------------------------------|-----------|
+| `reconcile.workers`           | `FORGE_PROVISIONER_RECONCILE_WORKERS`             | `8`       |
+| `reconcile.resyncInterval`    | `FORGE_PROVISIONER_RECONCILE_RESYNC_INTERVAL`     | `15m`     |
+| `reconcile.leaseDuration`     | `FORGE_PROVISIONER_RECONCILE_LEASE_DURATION`      | `60s`     |
+| `policy.evalTimeout`          | `FORGE_PROVISIONER_POLICY_EVAL_TIMEOUT`           | `500ms`   |
+| `script.maxAllocs`            | `FORGE_PROVISIONER_SCRIPT_MAX_ALLOCS`             | `100000`  |
+| `script.timeout`              | `FORGE_PROVISIONER_SCRIPT_TIMEOUT`                | `2s`      |
+| `bundle.validity`             | `FORGE_PROVISIONER_BUNDLE_VALIDITY`               | `168h`    |
+| `bundle.maxWait`              | `FORGE_PROVISIONER_BUNDLE_MAX_WAIT`               | `60s`     |
+| `inventory.url`               | `FORGE_PROVISIONER_INVENTORY_URL`                 | required  |
+| `secrets.directory`           | `FORGE_PROVISIONER_SECRETS_DIRECTORY`             | required if devices are used |
+
+### Build, release & versioning
+
+Bootstrap from `go-echo-starter`, replacing its logging with `forge-common` and its route-metadata
+OpenAPI with the embedded contract from 0002. Binary `forge-provisioner`; the starter's Dockerfile and
+Helm chart carry over. Database migrations are forward-only goose files; bundles are versioned by
+payload type so agents can support the current and previous `apiVersion`.
+
+### Testing
+
+- **Policy** — Rego unit tests for embedded platform policies with `opa test`, run as
+  `go run github.com/open-policy-agent/opa@v1.20.2 test`.
+- **Sandbox** — importing `os`, file imports, allocation exhaustion, infinite loops, and oversized output
+  must all fail.
+- **Determinism** — rendering the same fixture twice yields the same digest.
+- **Reconciliation** — integration tests on a disposable PostgreSQL: lease expiry, two workers, backoff,
+  and selector changes.
+- **Drivers** — `httptest` and an in-process `x/crypto/ssh` server. Contract tests against the OpenAPI
+  document, fuzzing, `-race`, and the module allowlist.
+
+## Alternatives considered
+
+- **OPA compiled to Wasm and run on [wazero](https://github.com/tetratelabs/wazero)** — v1.12.0 links
+  2 modules (`wazero`, `x/sys`) instead of 26, but Forge would own the OPA Wasm ABI and non-Wasm builtins
+  ([OPA Wasm](https://www.openpolicyagent.org/docs/wasm)), and the official Go SDK
+  [`golang-opa-wasm`](https://github.com/open-policy-agent/golang-opa-wasm) is archived. It also departs
+  from 0001's "OPA as a Go library" decision.
+- **Push to agents** (provisioner connects out or holds streams) — needs a route to hosts and long-lived
+  connections through the gateway; pull with long polling fits the agent ingress.
+- **Unsigned bundles relying on mutual TLS** — a compromised gateway could forge directives that OPA
+  might still allow.
+- **Out-of-process drivers over go-plugin** — isolates faults, but brings gRPC into a service against
+  the [API style convention](CONVENTIONS.md#api-contract-and-style).
+- **A job queue library such as River** — more features, but a dependency for what `SKIP LOCKED` does.
+- **CUE or Jsonnet instead of Tengo** — ruled out by 0001.
+- **Tengo v2.17.0 tag** — a clean tag, but missing fixes; kept as the fallback.
+
+## Open questions
+
+- **Inventory change feed** — cursor polling (proposed), or does 0009 call the provisioner?
+- **Principal propagation** — the header or token the gateway forwards, and the permission names (0006,
+  0008).
+- **Secret providers** beyond mounted files — Vault, cloud secret managers?
+- **Plugin-defined kinds** — who publishes their schemas: `forge-api-schema` or the plugin (0013)?
+- **Bundle validity** — is 7 days right for offline agents, and should it be per tenant?
+- **Tengo maintenance** — pin upstream pseudo-versions, or fork under `servercurio`?
+- **Approvals** — do `production` changes need a second approver before dispatch?
+
+## References
+
+- [0001 — Project Repositories](0001-project-repositories.md), [CONVENTIONS.md](CONVENTIONS.md),
+  [0002](0002-forge-api-schema.md), [0003](0003-forge-sdk.md), [0004](0004-forge-common.md).
+- [OPA Go integration](https://www.openpolicyagent.org/docs/integration) and
+  [`v1/rego`](https://pkg.go.dev/github.com/open-policy-agent/opa/v1/rego) — `PrepareForEval`,
+  `Capabilities`, `StrictBuiltinErrors`, `EnablePrintStatements`; source read at v1.20.2.
+- [OPA releases](https://github.com/open-policy-agent/opa/releases) — v1.20.2, 2026-09-03.
+- [Tengo](https://github.com/d5/tengo) and [`tengo/v2`](https://pkg.go.dev/github.com/d5/tengo/v2) —
+  `SetMaxAllocs`, `RunContext`, `EnableFileImport`, `stdlib.GetModuleMap`;
+  [v3.0.0 `go.mod`](https://github.com/d5/tengo/blob/v3.0.0/go.mod) declares `/v2`.
+- [santhosh-tekuri/jsonschema](https://github.com/santhosh-tekuri/jsonschema).
+- [`go.yaml.in/yaml/v3`](https://pkg.go.dev/go.yaml.in/yaml/v3) — `Node` and `AliasNode`.
+- [DSSE envelope](https://github.com/secure-systems-lab/dsse/blob/master/envelope.md) and
+  [protocol](https://github.com/secure-systems-lab/dsse/blob/master/protocol.md).
+- [PostgreSQL `FOR UPDATE SKIP LOCKED`](https://www.postgresql.org/docs/current/sql-select.html#SQL-FOR-UPDATE-SHARE)
+  and [row security policies](https://www.postgresql.org/docs/current/ddl-rowsecurity.html).
+- [RFC 9110](https://www.rfc-editor.org/rfc/rfc9110) — conditional requests;
+  [RFC 6241](https://www.rfc-editor.org/rfc/rfc6241) — NETCONF.
+- [Kubernetes API conventions](https://github.com/kubernetes/community/blob/master/contributors/devel/sig-architecture/api-conventions.md).
+- [wazero](https://github.com/tetratelabs/wazero), [OPA Wasm](https://www.openpolicyagent.org/docs/wasm),
+  [golang-opa-wasm](https://github.com/open-policy-agent/golang-opa-wasm) (archived).
+- [River](https://github.com/riverqueue/river) — PostgreSQL job queue named in alternatives.
+- [go-echo-starter](https://github.com/servercurio/go-echo-starter) — Echo v5, pgx, bun, goose; `go.mod`.
