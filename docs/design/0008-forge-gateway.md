@@ -61,7 +61,7 @@ limits, and principal propagation to this document ([0002](0002-forge-api-schema
 |------------|--------------|----------------------------|------------------------------------------------|
 | `operator` | 8443         | 1.2+, starter cipher suites | `Authorization: Bearer`                       |
 | `agent`    | 9443         | 1.3 only                   | X.509-SVID `spiffe://<env-id>/agent/<id>`      |
-| `health`   | 8080         | none, bound to pod address | none; `/livez`, `/readyz`, `/healthz` only    |
+| `health`   | 8080         | none, private address only | none; `/livez`, `/readyz`, `/healthz` only    |
 
 Both TLS listeners serve the gateway's service certificate,
 `spiffe://<environment-id>/service/forge-gateway`, issued by `forge-identity` and renewed by `forge-sdk`'s `enroll.Renewer`. `forge-sdk` clients refuse a
@@ -280,6 +280,7 @@ omitted here.
 | `server.health.port`                   | `FORGE_GATEWAY_SERVER_HEALTH_PORT`                | `8080`             |
 | `certificate.dir`                      | `FORGE_GATEWAY_CERTIFICATE_DIR`                   | required           |
 | `certificate.enrollmentTokenFile`      | `FORGE_GATEWAY_CERTIFICATE_ENROLLMENT_TOKEN_FILE` | first start only   |
+| `certificate.serviceAccountTokenFile`  | `FORGE_GATEWAY_CERTIFICATE_SERVICE_ACCOUNT_TOKEN_FILE` | first start on Kubernetes |
 | `upstreams.<segment>.url`              | `FORGE_GATEWAY_UPSTREAMS_INVENTORY_URL`, …        | required per route |
 | `upstreams.<segment>.timeout`          | `FORGE_GATEWAY_UPSTREAMS_INVENTORY_TIMEOUT`, …    | `30s`              |
 | `auth.issuer`                          | `FORGE_GATEWAY_AUTH_ISSUER`                       | required           |
@@ -296,8 +297,11 @@ omitted here.
 - **Contract coupling** — a new `operator` or `agent` operation is reachable only after the gateway
   upgrades `forge-api-schema`. A 100-series workflow opens that pull request on each schema release, like
   `forge-sdk`'s regeneration workflow.
-- **Deployment** — container image and Ansible roles in [0005](0005-forge-infrastructure.md). The
-  starter's Helm chart is removed, because 0001 deploys Forge with Ansible.
+- **Deployment** — the gateway ships every artifact in
+  [CONVENTIONS — Deployment artifacts](CONVENTIONS.md#deployment-artifacts): the signed multi-arch image,
+  the starter's Helm chart in `charts/forge-gateway/` with the enrollment init container, signed deb and
+  rpm packages with a hardened systemd unit, and a signed MSI. [0005](0005-forge-infrastructure.md)
+  deploys them to Kubernetes, container, and OS targets with Ansible.
 - **Versioning** — `v0.x`, per [CONVENTIONS.md](CONVENTIONS.md).
 
 ### Testing
