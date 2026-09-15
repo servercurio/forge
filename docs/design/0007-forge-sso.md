@@ -1,3 +1,7 @@
+<!--
+  ~ SPDX-License-Identifier: Apache-2.0
+-->
+
 # 0007 — forge-sso
 
 - **Status:** Draft
