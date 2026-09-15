@@ -1,3 +1,7 @@
+<!--
+  ~ SPDX-License-Identifier: Apache-2.0
+-->
+
 # Design documents
 
 Numbered design documents and RFCs for Forge. Each proposes a decision, records the reasoning and the
