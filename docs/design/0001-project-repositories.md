@@ -183,15 +183,17 @@ intermediate CA key is held in one of two backends:
 - **KEK-sealed store in `forge-identity` (last resort)** — the key is stored encrypted and decrypted in
   memory to sign. Its key-encryption key (KEK) comes from an external secret manager at startup, is held
   only in memory, and never sits on disk beside the encrypted CA key. Use it for testing and staging, or
-  in production only when no HSM or KMS is available: while the key is in memory, a compromised
+  in `production` only when no HSM or KMS is available, through the explicit, logged override described
+  under [Environment awareness](#environment-awareness). While the key is in memory, a compromised
   `forge-identity` can steal it and issue agent certificates.
 
 A new agent bootstraps as follows, modeled on
 [`kubeadm join`](https://kubernetes.io/docs/reference/setup-tools/kubeadm/kubeadm-join/):
 
 1. **Create a token.** An operator creates an enrollment token with `forge-cli`. It is single-use, valid
-   for 1 hour by default (operators may set up to 24 hours per token for batch provisioning), bound to a
-   tenant and optional host labels, and carries the SHA-256 hash of the Forge CA certificate.
+   for 1 hour by default (operators may set up to 24 hours per token for batch provisioning), bound to an
+   environment, a tenant, and optional host labels, and carries the SHA-256 hash of that environment's
+   CA certificate.
 2. **Generate a key on the host.** `forge-agent` generates its private key locally, and the key never
    leaves the host. It is stored in the TPM or OS keystore when one is available, otherwise in a file
    readable only by the agent's user.
@@ -254,6 +256,8 @@ as possible:
   [opentelemetry-go#2579](https://github.com/open-telemetry/opentelemetry-go/issues/2579)). The custom
   exporter is estimated at about 8. Forge keeps this exporter permanently and owns its retries,
   compression, TLS, and configuration.
+- **Environment** — every log event and exported telemetry resource carries the environment name; see
+  [Environment awareness](#environment-awareness).
 
 ### Forge's own infrastructure
 
@@ -261,7 +265,7 @@ as possible:
 Ansible project rather than a Go project, and it does not depend on `forge-agent`:
 
 - **Ansible (YAML)** — playbooks, roles, and inventories describing how each Forge service is deployed
-  and configured per environment.
+  and configured per environment. Each environment's inventory declares its environment name and tier.
 - **OPA policies** — Rego policies evaluated against the Ansible inventories and variables before a run
   (for example, "`forge-identity` is never exposed on a public interface"), so non-compliant changes are
   blocked before they reach an environment.
@@ -283,6 +287,32 @@ or provisioner to deploy itself.
 - **One source of truth per contract.** The wire contract lives once in `forge-api-schema`; clients
   consume the generated `forge-sdk` rather than re-deriving types. Logging and telemetry are likewise
   implemented once, in `forge-common`, rather than per repository.
+
+## Cross-cutting requirements
+
+### Environment awareness
+
+Every Forge component — the services, `forge-cli`, `forge-agent`, agent plugins, and
+`forge-infrastructure` — must know which environment it runs in and behave accordingly.
+
+- **Tiers** — four fixed tiers: `production`, `staging`, `test`, and `development`. A deployment may use
+  its own environment name (e.g. `qa-east`) but must declare its tier; behavior follows the tier, never
+  the name. An unknown tier is rejected at startup.
+- **Required at startup** — there is no default. The environment name and tier are set through each
+  component's configuration file or `<PREFIX>_*` environment variables, like the starters' other
+  settings, and a component started without them refuses to start. Local development tooling sets
+  `development` explicitly. `forge-agent` records its environment from the deployment it enrolls with.
+- **Hardened defaults by tier** — `production` and `staging` default to hardened settings (for example
+  TLS, secure cookies, and the OpenAPI UI disabled); `development` relaxes them. This replaces the
+  per-setting "change this in production" guidance in the `go-*-starter` configuration.
+- **Last-resort features gated** — features marked last resort or testing-only, such as the KEK-sealed
+  CA key store, are refused in `production` unless explicitly overridden, and every override is logged.
+- **Isolation** — each environment has its own CA, enrollment tokens, and credentials. A service or
+  agent from one environment is rejected by another.
+- **Tagged logs and telemetry** — `forge-common` adds the environment name to every log event and sets
+  the OpenTelemetry
+  [`deployment.environment.name`](https://opentelemetry.io/docs/specs/semconv/registry/attributes/deployment/)
+  resource attribute on exported telemetry.
 
 ## Bootstrapping a repository from a starter
 
@@ -346,6 +376,10 @@ Answers to this document's earlier open questions (2026-09-14 to 2026-09-15). Th
   `forge-identity` sets to 1 hour and 24 hours respectively, then fails closed.
 - **Custom exporter footprint** — Keep the Forge-built OTLP/HTTP exporter permanently rather than
   switching to the official exporter if opentelemetry-go#2579 is fixed.
+- **Environment awareness** — Every component requires an environment name and one of four tiers
+  (`production`, `staging`, `test`, `development`) at startup and refuses to start without them. The
+  tier drives hardened defaults, gates last-resort features, isolates CAs and credentials, and is tagged
+  on all logs and telemetry. See [Environment awareness](#environment-awareness).
 - **Plugin transport** — gRPC through `hashicorp/go-plugin`, which handles the handshake, process
   lifecycle, and optional mutual TLS.
 - **Plugin signing** — Sigstore (cosign) signatures verified against trusted publisher identities, plus
@@ -375,6 +409,8 @@ None at present. Answered questions are recorded under
   packages and wrapped by `forge-common`.
 - [OpenTelemetry](https://opentelemetry.io/docs/) — vendor-neutral standard for traces, metrics, and
   logs.
+- [OpenTelemetry deployment attributes](https://opentelemetry.io/docs/specs/semconv/registry/attributes/deployment/)
+  — defines the `deployment.environment.name` resource attribute.
 - [opentelemetry-go#2579](https://github.com/open-telemetry/opentelemetry-go/issues/2579) — upstream
   issue: the OTLP/HTTP exporters depend on gRPC.
 - [`go.opentelemetry.io/proto/slim/otlp`](https://github.com/open-telemetry/opentelemetry-proto-go/blob/main/slim/otlp/go.mod)
