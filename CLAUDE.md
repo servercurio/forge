@@ -29,9 +29,10 @@ repositories seeded from the external `go-*-starter` baselines; see
 
 The repository is intentionally **minimal**: it currently ships only its configuration and meta
 files (this file, the `.claude/` guidance, `.gitignore`, `CODEOWNERS`, the PR-formatting and
-license-header workflows, `.licenserc.yaml`, the Dependabot config, `LICENSE`, `README.md`,
-`CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`), the design documents under `docs/design/`,
-and the brand mark at `docs/images/logo.svg`. The Hugo site is added on top of this foundation.
+license-header workflows, `.licenserc.yaml`, `Taskfile.yaml`, the Dependabot config, `LICENSE`,
+`README.md`, `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`), the design documents under
+`docs/design/`, and the brand mark at `docs/images/logo.svg`. The Hugo site is added on top of this
+foundation.
 
 When asked to add functionality, keep the repository focused on documentation, design, and the
 site. Don't introduce application code, backend services, or persistence — those belong in the

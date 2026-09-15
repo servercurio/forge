@@ -18,9 +18,11 @@ directories as they are first needed rather than adding empty placeholders.
   against the conventional-commit grammar. Follow the numeric-prefix naming convention when adding
   workflows (200 = PR-triggered, 300 = main-branch push, 100 = operational/release, 800 = reusable).
   `200-flow-pull-request-checks.yaml` and `300-flow-main-branch-checks.yaml` run the SPDX license-header
-  check in `800-call-license-headers.yaml`.
+  check in `800-call-license-headers.yaml`, which runs `task lint:license`.
 - `.licenserc.yaml` — license-eye policy for SPDX license headers; ignores only files that cannot hold a
   comment.
+- `Taskfile.yaml` — repository checks: `task lint:license` (run by CI) and `task license:fix`. The Hugo
+  site is still driven by the Hugo CLI.
 - `.github/dependabot.yml` — Weekly GitHub Actions version updates with `ci`-prefixed commits,
   grouped into minor/patch and major updates.
 - `.github/CODEOWNERS` — Review routing.
