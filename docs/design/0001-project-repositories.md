@@ -175,13 +175,21 @@ independently of the internal identity system.
 ### Agent enrollment
 
 `forge-identity` runs an internal certificate authority (CA) for agent identities. Its intermediate CA
-signs agent certificates; the root CA stays offline in an HSM or cloud key-management service. A new
-agent bootstraps as follows, modeled on
+signs agent certificates; the root CA stays offline in an HSM or cloud key-management service. The
+intermediate CA key is held in one of two backends, chosen per deployment:
+
+- **HSM or cloud KMS** — `forge-identity` signs through the HSM or KMS API, so the key never enters the
+  service's memory or disk.
+- **Encrypted store in `forge-identity`** — the key is stored encrypted and decrypted in memory to sign.
+  Its key-encryption key (KEK) comes from an external secret manager at startup, is held only in
+  memory, and never sits on disk beside the encrypted CA key.
+
+A new agent bootstraps as follows, modeled on
 [`kubeadm join`](https://kubernetes.io/docs/reference/setup-tools/kubeadm/kubeadm-join/):
 
-1. **Create a token.** An operator creates an enrollment token with `forge-cli`. It is single-use,
-   short-lived (e.g. one hour), bound to a tenant and optional host labels, and carries the SHA-256 hash
-   of the Forge CA certificate.
+1. **Create a token.** An operator creates an enrollment token with `forge-cli`. It is single-use, valid
+   for 1 hour by default (operators may set up to 24 hours per token for batch provisioning), bound to a
+   tenant and optional host labels, and carries the SHA-256 hash of the Forge CA certificate.
 2. **Generate a key on the host.** `forge-agent` generates its private key locally, and the key never
    leaves the host. It is stored in the TPM or OS keystore when one is available, otherwise in a file
    readable only by the agent's user.
@@ -192,7 +200,8 @@ agent bootstraps as follows, modeled on
    `forge-identity` validates the token, marks it used, and returns a certificate signed by the
    intermediate CA.
 5. **Operate over mutual TLS.** All further agent traffic uses the certificate. The agent renews it over
-   its existing mutual-TLS connection at about two-thirds of its lifetime.
+   its existing mutual-TLS connection at two-thirds of its lifetime (e.g. day 20 of a 30-day
+   certificate), leaving the final third to retry through outages.
 
 Certificate lifetime and revocation:
 
@@ -202,6 +211,9 @@ Certificate lifetime and revocation:
   ([RFC 6960](https://www.rfc-editor.org/rfc/rfc6960)). `forge-gateway` checks each agent certificate
   with OCSP and caches the responses, falls back to the latest CRL when the responder is unreachable,
   and rejects the agent when neither is available within the cache window (fail closed).
+- **Cache window** — the gateway caches OCSP responses and the CRL until their `nextUpdate` time, which
+  `forge-identity` sets to 1 hour for OCSP and 24 hours for the CRL. A revoked agent is normally cut off
+  within an hour, and within 24 hours if the OCSP responder is unavailable.
 
 ### Agent plugin ecosystem
 
@@ -238,7 +250,8 @@ as possible:
   The official OTLP exporters link 15 third-party modules, including gRPC, even when exporting over
   HTTP (measured on otel v1.46.0;
   [opentelemetry-go#2579](https://github.com/open-telemetry/opentelemetry-go/issues/2579)). The custom
-  exporter is estimated at about 8, and Forge owns its retries, compression, TLS, and configuration.
+  exporter is estimated at about 8. Forge keeps this exporter permanently and owns its retries,
+  compression, TLS, and configuration.
 
 ### Forge's own infrastructure
 
@@ -320,10 +333,16 @@ Answers to this document's earlier open questions (2026-09-14 to 2026-09-15). Th
 - **Trust zones** — A dedicated mutual-TLS agent ingress on `forge-gateway`, with per-agent certificates
   issued by `forge-identity`, kept apart from the operator and third-party entry point.
 - **Agent enrollment** — `forge-identity` runs an internal CA and signs CSRs presented with a single-use
-  enrollment token created in `forge-cli`; the token pins the CA hash for first contact. Keys are
-  generated on the host and hardware-backed when available. Certificates last 30–90 days per tenant
-  (default 30), with OCSP checks, CRL fallback, and fail-closed revocation. See
+  enrollment token created in `forge-cli` (1 hour by default, 24 hours maximum); the token pins the CA
+  hash for first contact. The intermediate CA key lives in an HSM or cloud KMS, or in an encrypted store
+  whose KEK comes from an external secret manager. Agent keys are generated on the host and
+  hardware-backed when available. Certificates last 30–90 days per tenant (default 30) and renew at
+  two-thirds of their lifetime, with OCSP checks, CRL fallback, and fail-closed revocation. See
   [Agent enrollment](#agent-enrollment).
+- **Revocation cache window** — The gateway caches OCSP responses and the CRL until `nextUpdate`, which
+  `forge-identity` sets to 1 hour and 24 hours respectively, then fails closed.
+- **Custom exporter footprint** — Keep the Forge-built OTLP/HTTP exporter permanently rather than
+  switching to the official exporter if opentelemetry-go#2579 is fixed.
 - **Plugin transport** — gRPC through `hashicorp/go-plugin`, which handles the handshake, process
   lifecycle, and optional mutual TLS.
 - **Plugin signing** — Sigstore (cosign) signatures verified against trusted publisher identities, plus
@@ -331,11 +350,8 @@ Answers to this document's earlier open questions (2026-09-14 to 2026-09-15). Th
 
 ## Open questions
 
-- **Revocation cache window** — how long `forge-gateway` may rely on cached OCSP responses and the last
-  CRL before failing closed.
-- **Custom exporter footprint** — confirm the estimated ~8 linked third-party modules once the
-  OTLP/HTTP exporter in `forge-common` is built, and whether to adopt the official exporter if
-  opentelemetry-go#2579 is fixed.
+None at present. Answered questions are recorded under
+[Resolved decisions](#resolved-decisions).
 
 ## References
 
