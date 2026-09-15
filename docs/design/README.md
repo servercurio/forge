@@ -14,6 +14,7 @@ alternatives considered, and tracks its status as the decision matures.
 | [0001](0001-project-repositories.md) | Project Repositories | Draft  | 2026-07-11 |
 | [0002](0002-forge-api-schema.md)     | forge-api-schema     | Draft  | 2026-09-15 |
 | [0003](0003-forge-sdk.md)            | forge-sdk            | Draft  | 2026-09-15 |
+| [0004](0004-forge-common.md)         | forge-common         | Draft  | 2026-09-15 |
 
 ## Statuses
 
