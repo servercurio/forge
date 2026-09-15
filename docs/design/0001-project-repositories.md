@@ -108,7 +108,7 @@ entry point, so managed hosts never share an ingress with administrators. See
 | `forge-identity`         | Platform · Go service / API        | Internal identity **and IdP**: internal SAML/OIDC provider for platform users; accounts, API tokens, RBAC/tenancy, session issuance; internal CA for service and agent certificates (enrollment tokens, CRL/OCSP)                                                                                                                             | `go-echo-starter`                |
 | `forge-sso`              | Platform · Go service + site       | SSO federation broker: fronts login; authenticates against the internal `forge-identity` IdP or via SAML/OIDC exchange with an external IdP; hosts the login/SSO site                                                                                                                                                                         | `go-echo-starter`                |
 | `forge-cli`              | Platform · Go CLI                  | Operator CLI; talks to the gateway via `forge-sdk`                                                                                                                                                                                                                                                                                            | `go-cli-starter`                 |
-| `forge-infrastructure`   | Platform · Infra / deployment      | Ansible playbooks, roles, and inventories (YAML) that deploy the Forge microservices **themselves**, gated by Open Policy Agent (OPA) policies. Forge's *own* operational infra                                                                                                                                                               | — (Ansible + OPA; no Go starter) |
+| `forge-infrastructure`   | Platform · Infra / deployment      | Ansible playbooks, roles, and inventories (YAML) that deploy the Forge microservices **themselves** to Kubernetes, Docker/Podman hosts, or supported operating systems, gated by Open Policy Agent (OPA) policies. Forge's *own* operational infra                                                                                            | — (Ansible + OPA; no Go starter) |
 | `forge-inventory`        | Product domain · Go service / API  | Source-of-truth catalog and schemas of the managed servers, network devices, and remote endpoints; upstream for `forge-agent`'s reported inventory                                                                                                                                                                                            | `go-echo-starter`                |
 | `forge-provisioner`      | Product domain · Go service / API  | Desired-state authority: owns directives/rules (custom YAML + OPA policies + Tengo scripts) and reconciliation; enforces agentless devices directly, and hands directives to `forge-agent` for agent-capable endpoints                                                                                                                        | `go-echo-starter`                |
 | `forge-agent`            | Product domain · Go daemon         | Endpoint daemon on managed hosts that can run it; enforces desired-state directives (custom YAML + OPA policies + Tengo scripts) locally, collects inventory, and runs plugins as separate processes. Reaches `forge-inventory`, `forge-identity`, and `forge-provisioner` through `forge-gateway`'s mutual-TLS agent ingress via `forge-sdk` | `go-cli-starter`                 |
@@ -230,10 +230,15 @@ Certificate lifetime and revocation:
 by `forge-agent`, so each plugin is its own executable and a failing plugin is isolated from the agent.
 
 Plugins talk to `forge-agent` over gRPC using [`hashicorp/go-plugin`](https://github.com/hashicorp/go-plugin).
-Before every launch, the agent verifies the plugin's
-[Sigstore](https://docs.sigstore.dev/cosign/signing/overview/) (cosign) signature against trusted
-publisher identities, then pins the binary's SHA-256 through go-plugin's
-[`SecureConfig`](https://pkg.go.dev/github.com/hashicorp/go-plugin#SecureConfig). The agent also passes its
+Plugin releases are signed with
+[Sigstore](https://docs.sigstore.dev/cosign/signing/overview/) (cosign). `forge-provisioner` verifies
+those signatures against trusted publisher identities when an operator imports a plugin release, and
+records the verified SHA-256 digests in the directive bundles it signs with its environment service
+certificate. Before every launch, the agent checks that the plugin's digest is pinned by a bundle whose
+signature it has verified, then pins the binary's SHA-256 through go-plugin's
+[`SecureConfig`](https://pkg.go.dev/github.com/hashicorp/go-plugin#SecureConfig). Agents never link a
+Sigstore verifier: sigstore-go v1.3.0's verifier compiles in 71 modules (measured 2026-09-15). The
+agent also passes its
 environment ID to each plugin at startup, and a plugin refuses to serve an agent whose environment ID
 differs from the one it was configured for.
 
@@ -273,14 +278,25 @@ Ansible project rather than a Go project, and it does not depend on `forge-agent
 
 - **Ansible (YAML)** — playbooks, roles, and inventories describing how each Forge service is deployed
   and configured per environment. Each environment's inventory declares its environment name and tier.
-- **OPA policies** — Rego policies evaluated against the Ansible inventories and variables before a run
+- **Deployment targets** — every environment runs on one of three supported target types, and the same
+  Ansible and OPA pipeline deploys all of them:
+  - **Kubernetes** — Ansible installs each service's Helm chart with
+    [`kubernetes.core.helm`](https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html).
+  - **Containers** — Podman hosts run [Quadlet](https://docs.podman.io/en/latest/markdown/podman-systemd.unit.5.html) units, and Docker hosts run
+    [Compose](https://docs.docker.com/compose/) files.
+  - **Directly on a compatible operating system** — signed deb and rpm packages with systemd units on
+    Enterprise Linux and Debian/Ubuntu LTS (amd64 and arm64), and MSI-installed Windows services on
+    Windows Server.
+- **OPA policies** — Rego policies evaluated against the Ansible inventories and variables, and against
+  the rendered Helm, Compose, and Quadlet output, before a run
   (for example, "`forge-identity` is never exposed on a public interface"), so non-compliant changes are
   blocked before they reach an environment.
 - **Execution** — [Conftest](https://www.conftest.dev) evaluates the OPA policies in pull-request CI; a
   dedicated control node (e.g. [AWX](https://github.com/ansible/awx)) runs the merged playbooks, so
   deployment credentials never live in CI.
 - **Service enrollment** — the control node holds its own environment certificate and delivers
-  single-use service enrollment tokens to each service it deploys; see
+  single-use service enrollment tokens to each service it deploys on container and operating-system
+  targets, while Kubernetes pods enroll with their service account tokens; see
   [Environment identity](#environment-identity).
 
 Deploying Forge with Ansible keeps the two axes fully separate: Forge does not depend on its own agent
@@ -342,11 +358,22 @@ deployment:
   certificates, issued by the environment's intermediate CA in `forge-identity`.
 - **Service certificate bootstrap** — when an environment is created, a key ceremony uses the offline
   root CA to sign `forge-identity`'s intermediate CA and the `forge-infrastructure` control node's
-  certificate; `forge-identity` then issues its own service certificate from the intermediate. For every
-  other service instance, the control node requests a single-use service enrollment token from
-  `forge-identity` and delivers it through Ansible, and the service enrolls with a CSR exactly as an
-  agent does. Service certificates last 7 days and renew automatically at two-thirds of their lifetime,
-  with the same OCSP and CRL checks as agent certificates.
+  certificate; `forge-identity` then issues its own service certificate from the intermediate. Every
+  other service instance enrolls with a CSR, as an agent does, using a credential that depends on its
+  deployment target:
+  - **Containers and operating systems** — the control node requests a single-use service enrollment
+    token from `forge-identity` and delivers it through Ansible.
+  - **Kubernetes** — an enrollment init container presents the pod's short-lived, audience-bound
+    [projected service account token](https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/#serviceaccount-token-volume-projection).
+    `forge-identity` verifies it offline against the cluster's service account issuer
+    ([issuer discovery](https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/#service-account-issuer-discovery)), which the
+    environment-creation ceremony registers together with a mapping from service accounts to Forge
+    service identities. Only the mapped service account can obtain, for example,
+    `spiffe://<environment-id>/service/forge-inventory`, and pods enroll on start, scale-out, and
+    rescheduling without an Ansible run.
+
+  Service certificates last 7 days and renew automatically at two-thirds of their lifetime, with the
+  same OCSP and CRL checks as agent certificates.
 - **Agents and plugins** — the enrollment token carries the environment ID, and the agent checks it
   against the gateway's certificate before enrolling. The agent passes its environment ID to plugins,
   which refuse to serve an agent from a different environment.
@@ -428,13 +455,21 @@ Answers to this document's earlier open questions (2026-09-14 to 2026-09-15). Th
   tokens, `forge-cli`, and `forge-infrastructure` all verify it. See
   [Environment identity](#environment-identity).
 - **Service certificate bootstrap** — An environment-creation key ceremony signs `forge-identity`'s
-  intermediate CA and the control node's certificate from the offline root; every other service enrolls
-  with a single-use service token delivered by Ansible. Service certificates last 7 days and renew
-  automatically.
+  intermediate CA and the control node's certificate from the offline root. Services on container and
+  operating-system targets enroll with single-use tokens delivered by Ansible; Kubernetes pods enroll
+  with projected service account tokens verified against the registered cluster issuer and service
+  account mapping. Service certificates last 7 days and renew automatically.
+- **Deployment targets** — Kubernetes (Helm charts), containers (Podman Quadlet and Docker Compose), and
+  direct installation on Enterprise Linux and Debian/Ubuntu LTS (signed deb and rpm packages with
+  systemd) or Windows Server (MSI-installed services), all deployed by the same Ansible and OPA
+  pipeline. See [Forge's own infrastructure](#forges-own-infrastructure).
 - **Plugin transport** — gRPC through `hashicorp/go-plugin`, which handles the handshake, process
   lifecycle, and optional mutual TLS.
-- **Plugin signing** — Sigstore (cosign) signatures verified against trusted publisher identities, plus
-  SHA-256 pinning through go-plugin `SecureConfig` before every launch.
+- **Plugin signing** — Plugin releases carry Sigstore (cosign) signatures. `forge-provisioner` verifies
+  them against trusted publisher identities when a release is imported and pins the verified SHA-256
+  digests in the directive bundles it signs; agents verify the bundle signature and pin the SHA-256
+  through go-plugin `SecureConfig` before every launch. Verification stays off agents because
+  sigstore-go v1.3.0's verifier compiles in 71 modules (measured 2026-09-15).
 
 ## Open questions
 
@@ -454,6 +489,14 @@ None at present. Answered questions are recorded under
 - [Conftest](https://www.conftest.dev) — runs OPA policies against structured configuration files,
   such as Ansible YAML, typically in CI.
 - [AWX](https://github.com/ansible/awx) — self-hosted Ansible execution server; an example control node.
+- [`kubernetes.core.helm`](https://docs.ansible.com/ansible/latest/collections/kubernetes/core/helm_module.html) — Ansible
+  module that installs Helm charts on Kubernetes targets.
+- [Podman Quadlet](https://docs.podman.io/en/latest/markdown/podman-systemd.unit.5.html) — systemd units for Podman
+  containers.
+- [Docker Compose](https://docs.docker.com/compose/) — container definitions for Docker hosts.
+- [Projected service account tokens](https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/#serviceaccount-token-volume-projection)
+  and [service account issuer discovery](https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/#service-account-issuer-discovery) —
+  Kubernetes pod credentials used for service enrollment.
 - [Tengo](https://github.com/d5/tengo) — embeddable Go scripting language used in desired-state
   directives by `forge-provisioner` and `forge-agent`.
 - [zerolog](https://github.com/rs/zerolog) — structured logger used by the `go-*-starter` logging
@@ -470,6 +513,7 @@ None at present. Answered questions are recorded under
   over RPC/gRPC.
 - [Sigstore cosign](https://docs.sigstore.dev/cosign/signing/overview/) — artifact signing used for
   plugin executables.
+- [sigstore-go](https://github.com/sigstore/sigstore-go) — Sigstore verifier used by `forge-provisioner`.
 - [Kubernetes API versioning](https://kubernetes.io/docs/reference/using-api/#api-versioning) — model
   for `apiVersion`/`kind` desired-state documents.
 - [JSON Schema](https://json-schema.org/) — schema format published from `forge-api-schema`.
