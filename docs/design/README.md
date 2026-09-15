@@ -9,20 +9,21 @@ alternatives considered, and tracks its status as the decision matures.
 
 ## Index
 
-| #                                    | Title                | Status | Date       |
-|--------------------------------------|----------------------|--------|------------|
-| [0001](0001-project-repositories.md) | Project Repositories | Draft  | 2026-07-11 |
-| [0002](0002-forge-api-schema.md)     | forge-api-schema     | Draft  | 2026-09-15 |
-| [0003](0003-forge-sdk.md)            | forge-sdk            | Draft  | 2026-09-15 |
-| [0004](0004-forge-common.md)         | forge-common         | Draft  | 2026-09-15 |
-| [0005](0005-forge-infrastructure.md) | forge-infrastructure | Draft  | 2026-09-15 |
-| [0006](0006-forge-identity.md)       | forge-identity       | Draft  | 2026-09-15 |
-| [0007](0007-forge-sso.md)            | forge-sso            | Draft  | 2026-09-15 |
-| [0008](0008-forge-gateway.md)        | forge-gateway        | Draft  | 2026-09-15 |
-| [0009](0009-forge-inventory.md)      | forge-inventory      | Draft  | 2026-09-15 |
-| [0010](0010-forge-cli.md)            | forge-cli            | Draft  | 2026-09-15 |
-| [0011](0011-forge-provisioner.md)    | forge-provisioner    | Draft  | 2026-09-15 |
-| [0012](0012-forge-agent.md)          | forge-agent          | Draft  | 2026-09-15 |
+| #                                      | Title                  | Status | Date       |
+|----------------------------------------|------------------------|--------|------------|
+| [0001](0001-project-repositories.md)   | Project Repositories   | Draft  | 2026-07-11 |
+| [0002](0002-forge-api-schema.md)       | forge-api-schema       | Draft  | 2026-09-15 |
+| [0003](0003-forge-sdk.md)              | forge-sdk              | Draft  | 2026-09-15 |
+| [0004](0004-forge-common.md)           | forge-common           | Draft  | 2026-09-15 |
+| [0005](0005-forge-infrastructure.md)   | forge-infrastructure   | Draft  | 2026-09-15 |
+| [0006](0006-forge-identity.md)         | forge-identity         | Draft  | 2026-09-15 |
+| [0007](0007-forge-sso.md)              | forge-sso              | Draft  | 2026-09-15 |
+| [0008](0008-forge-gateway.md)          | forge-gateway          | Draft  | 2026-09-15 |
+| [0009](0009-forge-inventory.md)        | forge-inventory        | Draft  | 2026-09-15 |
+| [0010](0010-forge-cli.md)              | forge-cli              | Draft  | 2026-09-15 |
+| [0011](0011-forge-provisioner.md)      | forge-provisioner      | Draft  | 2026-09-15 |
+| [0012](0012-forge-agent.md)            | forge-agent            | Draft  | 2026-09-15 |
+| [0013](0013-forge-agent-plugin-sdk.md) | forge-agent-plugin-sdk | Draft  | 2026-09-15 |
 
 ## Statuses
 
