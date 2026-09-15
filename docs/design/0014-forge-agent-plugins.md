@@ -6,7 +6,8 @@
 - **Summary:** `forge-agent-plugins` is one Go module that builds four first-party plugin executables —
   system facts, packages, files, and services — released together on one version. Each binary ships
   with a SHA-256, a keyless cosign bundle signed from GitHub Actions, and a CycloneDX SBOM, so
-  `forge-agent` can verify, pin, and install exactly the plugin versions its desired state names.
+  `forge-provisioner` can verify each release and `forge-agent` can pin and install exactly the plugin
+  versions its desired state names.
 
 > An initial draft with concrete proposals, bounded by the
 > [Resolved decisions](0001-project-repositories.md#resolved-decisions) in 0001. Conventions other
@@ -16,21 +17,22 @@
 
 0001 lists `forge-agent-plugins` as the first-party plugin executables, built on
 `forge-agent-plugin-sdk` and seeded from `go-cli-starter`
-([Repository inventory](0001-project-repositories.md#repository-inventory)). The agent verifies each
-plugin's Sigstore signature against trusted publisher identities and pins its SHA-256 before every
-launch ([Agent plugin ecosystem](0001-project-repositories.md#agent-plugin-ecosystem)). The contract,
+([Repository inventory](0001-project-repositories.md#repository-inventory)). `forge-provisioner`
+verifies each plugin release's Sigstore signature against trusted publisher identities, and the agent
+pins its SHA-256 before every launch ([Agent plugin ecosystem](0001-project-repositories.md#agent-plugin-ecosystem)). The contract,
 grants, and environment check come from [0013](0013-forge-agent-plugin-sdk.md).
 
 **Goals**
 
 - A modest, justified first plugin set for common server convergence.
 - A layout that keeps each binary's dependencies and privileges separate.
-- Release artifacts that meet the agent's verification: signature, digest, SBOM, and manifest.
+- Release artifacts that meet the provisioner's verification: signature, digest, SBOM, and manifest.
 - A documented path from a release to a pinned plugin on a host.
 
 **Non-goals**
 
-- Verification, installation, and sandboxing — [0012](0012-forge-agent.md). The contract — 0013.
+- Signature verification — [0011](0011-forge-provisioner.md); installation and sandboxing —
+  [0012](0012-forge-agent.md). The contract — 0013.
 - Third-party plugins — [0015](0015-forge-plugin-starter.md). Agentless devices —
   [0011](0011-forge-provisioner.md).
 - Templating or scripting on hosts; Tengo runs in the agent and provisioner (0001).
@@ -209,8 +211,8 @@ cosign verify-blob "bin/${f}" --bundle "bin/${f}.sigstore.json" \
 ```
 
 - **Keyless** — GitHub OIDC (`https://token.actions.githubusercontent.com`) through Fulcio, so there
-  are no long-lived keys. The bundle carries the Rekor inclusion proof, so agents can verify offline
-  with a `trusted_root.json`; cosign v3.1.3 deprecates `--offline` in favor of `--bundle` plus
+  are no long-lived keys. The bundle carries the Rekor inclusion proof, so `forge-provisioner` can
+  verify offline with a `trusted_root.json`; cosign v3.1.3 deprecates `--offline` in favor of `--bundle` plus
   `--trusted-root`.
 - **`task verify`** fails the release if the identity drifts, for example after a workflow rename.
 - **SBOMs** — `cyclonedx-gomod app -licenses -main cmd/forge-plugin-<name>` per plugin and platform,
@@ -247,12 +249,15 @@ spec:
   grant: { capabilities: [resource:forge.servercurio.com/v1alpha1/Package] }
 ```
 
-1. **Import** — `forge-provisioner` verifies `plugins-index.json` against the publisher and writes the
-   digests into `AgentPlugin`. Nothing auto-updates to "latest".
-2. **Download** — the agent fetches `<asset>` and its bundle from `baseURL`. That may be a mirror,
-   because detached bundles survive mirroring.
-3. **Verify** — the agent checks the SHA-256 against the directive and the bundle against the
-   publisher. The identity is built from structured fields, never a free-form regular expression.
+1. **Import** — `forge-provisioner` verifies `plugins-index.json`, the manifest, and every listed
+   asset's `.sigstore.json` against the publisher with sigstore-go, and writes the verified digests into
+   `AgentPlugin` ([0011](0011-forge-provisioner.md)). Nothing auto-updates to "latest". The publisher
+   identity is built from structured fields, never a free-form regular expression.
+2. **Download** — the agent fetches `<asset>` from `baseURL`. That may be a mirror, because the pinned
+   digest, not the transport, establishes integrity.
+3. **Verify** — the agent checks the SHA-256 against the pin in its provisioner-signed bundle. It does
+   not verify Sigstore bundles itself, which would add about 59 modules to every agent
+   ([0012](0012-forge-agent.md#sigstore-verifier-measurements)).
 4. **Compatibility** — the manifest's `protocolVersions` must overlap the agent's.
 5. **Install** — into a root-owned `…/plugins/<name>/<sha256>/`, keeping the previous digest for
    rollback. Every launch pins that digest through `SecureConfig`.
@@ -289,7 +294,7 @@ current, and when the SDK drops a protocol, plugins keep serving N-1 until the a
 - **Key-based cosign (KMS)** — adds key custody and rotation. Keyless ties signatures to this workflow
   and still verifies offline. Third parties may use keys (0015).
 - **GitHub artifact attestations only** — also Sigstore-backed, but fetched per artifact from GitHub,
-  while bundles next to assets work with mirrors.
+  while bundles next to assets let the provisioner verify releases imported from mirrors.
 - **gopsutil** (measured above) and **go-systemd over D-Bus** (adds `godbus`; not measured).
 - **Deviation from [CONVENTIONS.md](CONVENTIONS.md)** (*Go modules and layout*: binaries take the repo
   name) — binaries are named `forge-plugin-<name>`, which maps to `FORGE_PLUGIN_<NAME>`.
@@ -299,7 +304,6 @@ current, and when the SDK drops a protocol, plugins keep serving N-1 until the a
 - **First release** — Linux only, with apt and dnf. Acceptable?
 - **Core facts** — do OS, architecture, and hostname belong in the agent (0012), leaving `sysfacts` for
   extended facts?
-- **Trusted root** — how does `trusted_root.json` reach air-gapped agents and stay current (0012)?
 - **GPG** — keep GPG hash signatures beside cosign bundles for manual verification?
 - **Index** — is `plugins-index.json` defined here, or as a kind in 0002?
 - **Kinds** — the kind names and the `forge.servercurio.com/v1alpha1` group, to confirm with 0002 and
