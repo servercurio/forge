@@ -17,6 +17,10 @@ directories as they are first needed rather than adding empty placeholders.
 - `.github/workflows/` — CI workflows. `200-flow-pull-request-formatting.yaml` validates PR titles
   against the conventional-commit grammar. Follow the numeric-prefix naming convention when adding
   workflows (200 = PR-triggered, 300 = main-branch push, 100 = operational/release, 800 = reusable).
+  `200-flow-pull-request-checks.yaml` and `300-flow-main-branch-checks.yaml` run the SPDX license-header
+  check in `800-call-license-headers.yaml`.
+- `.licenserc.yaml` — license-eye policy for SPDX license headers; ignores only files that cannot hold a
+  comment.
 - `.github/dependabot.yml` — Weekly GitHub Actions version updates with `ci`-prefixed commits,
   grouped into minor/patch and major updates.
 - `.github/CODEOWNERS` — Review routing.

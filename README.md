@@ -20,7 +20,8 @@ this foundation.
 - `CONTRIBUTING.md` — contribution, commit-signing, and pull-request guide
 - `SECURITY.md` — vulnerability reporting policy
 - `CODE_OF_CONDUCT.md` — community standards
-- `.github/workflows/` — CI; PR-title formatting checks
+- `.github/workflows/` — CI; PR-title formatting and SPDX license-header checks
+- `.licenserc.yaml` — license-header policy for license-eye
 - `.github/CODEOWNERS` — review routing
 - `.gitignore` — Hugo / Node / editor / OS ignore rules
 - `docs/design/` — design documents and RFCs (numeric-prefix series)
