@@ -12,6 +12,7 @@ alternatives considered, and tracks its status as the decision matures.
 | #                                    | Title                | Status | Date       |
 |--------------------------------------|----------------------|--------|------------|
 | [0001](0001-project-repositories.md) | Project Repositories | Draft  | 2026-07-11 |
+| [0002](0002-forge-api-schema.md)     | forge-api-schema     | Draft  | 2026-09-15 |
 
 ## Statuses
 
