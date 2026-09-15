@@ -6,7 +6,8 @@
 - **Summary:** `forge-plugin-starter` is a Forge-owned GitHub template, derived from `go-cli-starter`,
   with a working example plugin wired to `forge-agent-plugin-sdk`. It includes a rename tool, a local
   fake agent, and CI that produces the same signed, SBOM-backed release assets as the first-party
-  plugins, so third parties can meet the agent's publisher verification without Forge's help.
+  plugins, so third parties can meet `forge-provisioner`'s import verification and the agents' on-host
+  validator without Forge's help. Third-party plugins are never core-signed.
 
 > An initial draft with concrete proposals, bounded by the
 > [Resolved decisions](0001-project-repositories.md#resolved-decisions) in 0001. Conventions other
@@ -18,19 +19,21 @@
 own" plugins. Unlike the general-purpose `go-*-starter` baselines, it is Forge-specific and depends on
 `forge-agent-plugin-sdk`
 ([Agent plugin ecosystem](0001-project-repositories.md#agent-plugin-ecosystem)). `forge-provisioner`
-imports only plugin releases whose cosign signature matches a trusted publisher, and agents run only the
-digests it pins, so a correct release pipeline must be the default.
+imports only plugin releases whose cosign signature matches a trusted publisher, agents run only the
+digests it pins, and the core `sigstore` validator on each host verifies the signature again before
+install, so a correct release pipeline must be the default.
 
 **Goals**
 
 - Clone, rename, pass `task test`, and cut a verifiable release, with no Forge involvement.
 - The least-privilege plugin as the default: unprivileged, with no network and no exec.
-- The same assets, manifest, and signing model as [0014](0014-forge-agent-plugins.md).
+- The same assets, manifest, and publisher signing model as [0014](0014-forge-agent-plugins.md).
 - A repeatable way to pick up `go-cli-starter` and SDK changes, and clear licensing guidance.
 
 **Non-goals**
 
 - A registry, a marketplace, or Forge certification of third-party plugins.
+- Core signing: third-party plugins are never core-signed and never core plugins (0014).
 - The contract ([0013](0013-forge-agent-plugin-sdk.md)) and agent verification
   ([0012](0012-forge-agent.md)).
 - Legal advice; the licensing section is guidance only.
@@ -81,7 +84,8 @@ Removed from `go-cli-starter`:
   the plugin's own directory.
 - **Manifest** — `capabilities: [facts, "resource:plugins.example.com/v1alpha1/Marker"]`,
   `privileges: { runAsRoot: false, execPaths: [], writePaths: [/var/lib/forge-plugin-example],
-  network: false }`, and `platforms: [linux/amd64, linux/arm64]`.
+  network: [] }`, and `platforms: [linux/amd64, linux/arm64]`. It never sets `core: true`; the agent
+  refuses that without a core signature (0013).
 - **Rename** — `task rename -- -name acme-backup -module github.com/acme/forge-plugin-acme-backup`
   (plus `-group` for the example kind; runs `go run ./tools/rename`) rewrites the module path, `cmd/`,
   `FORGE_PLUGIN_EXAMPLE` → `FORGE_PLUGIN_ACME_BACKUP`, the manifest, the schema `$id`, workflow
@@ -171,10 +175,17 @@ spec:
     refs: [refs/heads/main]
 ```
 
+- **Two verifications** — every release asset ships an `<asset>.sigstore.json` bundle.
+  `forge-provisioner` verifies it at import ([0011](0011-forge-provisioner.md)), and the core `sigstore`
+  validator on each host verifies it again, offline, against the same `PluginPublisher` identity: the
+  certificate identity, a transparency-log entry, and, for keyless certificates, an SCT, using a
+  TUF-verified trusted root ([0012](0012-forge-agent.md)). A bundle without a transparency-log entry
+  fails on hosts.
 - **Key-based option** — when `COSIGN_KEY` is set, for example to a KMS URI, `task sign` runs
-  `cosign sign-blob --key`, and publishers distribute `spec.key.publicKeyPEM`. It suits publishers
-  outside GitHub Actions, or private repositories: public-good Sigstore records the signer identity,
-  including the repository and workflow path, in the public Rekor log (not re-verified here).
+  `cosign sign-blob --key` with `--bundle`, and publishers distribute `spec.key.publicKeyPEM`. It suits
+  publishers outside GitHub Actions, or private repositories: public-good Sigstore records the signer
+  identity, including the repository and workflow path, in the public Rekor log (not re-verified here).
+  The bundle must still carry a transparency-log entry for the host validator.
 - **Branch protection** — releases run only through dispatch on a protected `main`, with `CODEOWNERS`
   on `.github/workflows/` and `.releaserc.json`. Whoever controls the release workflow can sign as the
   identity.
@@ -206,9 +217,11 @@ See Interfaces.
   windows are opt-in. `CGO_ENABLED=0` and `-trimpath`.
 - **`publishCmd`** — `task build && task hash && task sign && task sbom && task index && task verify`,
   producing 0014's assets: `<asset>`, `.sha256`, `.sigstore.json`, `.cdx.json` with its bundle,
-  `forge-plugin-<name>.manifest.yaml`, and `plugins-index.json`, each signed.
+  `forge-plugin-<name>.manifest.yaml`, and `plugins-index.json`, each signed. There is no `coresign`
+  step and no `.core.dsse.json`.
 - **Verification and attestations** — `task verify` checks every bundle against the repository's own
-  identity before publishing. The starter's `attest-build-provenance` and `attest-sbom` steps stay.
+  identity before publishing, requiring a transparency-log entry as the host validator does. The
+  starter's `attest-build-provenance` and `attest-sbom` steps stay.
 
 #### Versioning and upstream tracking
 
@@ -274,6 +287,8 @@ removed:  [Dockerfile, internal/database/, internal/pool/, internal/obfusicate/,
   repository names private.
 - **A Forge-hosted reusable signing workflow** — certificates would name Forge's repository instead of
   the publisher's.
+- **Core signing for third-party plugins** — would make Forge a certifier, contradicting the non-goals,
+  and would put the core-plugin key behind code Forge does not own.
 - **A permissive, no-attribution license (e.g. 0BSD) for the template** — removes notice obligations,
   but deviates from 0001's Apache-2.0 shared meta.
 - **Deviation from [CONVENTIONS.md](CONVENTIONS.md)** (*Go modules and layout*) — the binary is
@@ -292,6 +307,7 @@ removed:  [Dockerfile, internal/database/, internal/pool/, internal/obfusicate/,
 ## References
 
 - [0001](0001-project-repositories.md), [CONVENTIONS.md](CONVENTIONS.md), [0004](0004-forge-common.md),
+  [0011](0011-forge-provisioner.md), [0012](0012-forge-agent.md),
   [0013](0013-forge-agent-plugin-sdk.md), [0014](0014-forge-agent-plugins.md).
 - [go-cli-starter](https://github.com/servercurio/go-cli-starter) — `go.mod`, `Taskfile.yaml`,
   `.releaserc.json`, workflows, and `naming-standards.md`; no tags or releases as of 2026-09-15.
