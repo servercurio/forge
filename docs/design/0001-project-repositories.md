@@ -113,7 +113,7 @@ entry point, so managed hosts never share an ingress with administrators. See
 | `forge-provisioner`      | Product domain · Go service / API  | Desired-state authority: owns directives/rules (custom YAML + OPA policies + Tengo scripts) and reconciliation; enforces agentless devices directly, and hands directives to `forge-agent` for agent-capable endpoints                                                                                                                        | `go-echo-starter`                |
 | `forge-agent`            | Product domain · Go daemon         | Endpoint daemon on managed hosts that can run it; enforces desired-state directives (custom YAML + OPA policies + Tengo scripts) locally, collects inventory, and runs plugins as separate processes. Reaches `forge-inventory`, `forge-identity`, and `forge-provisioner` through `forge-gateway`'s mutual-TLS agent ingress via `forge-sdk` | `go-cli-starter`                 |
 | `forge-agent-plugin-sdk` | Product domain · Shared library    | Plugin interface/contract + host-side helpers that every agent plugin builds against — the stable extension point for `forge-agent`                                                                                                                                                                                                           | `go-library-starter`             |
-| `forge-agent-plugins`    | Product domain · Plugin collection | First-party / officially-maintained agent plugin executables, built against `forge-agent-plugin-sdk`                                                                                                                                                                                                                                          | `go-cli-starter`                 |
+| `forge-agent-plugins`    | Product domain · Plugin collection | First-party / officially-maintained agent plugin executables, built against `forge-agent-plugin-sdk`, including the core plugins (`sigstore` validator, `sysfacts`) bundled with `forge-agent`                                                                                                                                                | `go-cli-starter`                 |
 | `forge-plugin-starter`   | Product domain · Template          | Project-owned scaffold third parties clone to author a new agent plugin executable (pre-wired to `forge-agent-plugin-sdk`)                                                                                                                                                                                                                    | `go-cli-starter`                 |
 
 A few decisions are baked into the table above and worth calling out explicitly:
@@ -230,20 +230,38 @@ Certificate lifetime and revocation:
 by `forge-agent`, so each plugin is its own executable and a failing plugin is isolated from the agent.
 
 Plugins talk to `forge-agent` over gRPC using [`hashicorp/go-plugin`](https://github.com/hashicorp/go-plugin).
-Plugin releases are signed with
-[Sigstore](https://docs.sigstore.dev/cosign/signing/overview/) (cosign). `forge-provisioner` verifies
-those signatures against trusted publisher identities when an operator imports a plugin release, and
-records the verified SHA-256 digests in the directive bundles it signs with its environment service
-certificate. Before every launch, the agent checks that the plugin's digest is pinned by a bundle whose
-signature it has verified, then pins the binary's SHA-256 through go-plugin's
-[`SecureConfig`](https://pkg.go.dev/github.com/hashicorp/go-plugin#SecureConfig). Agents never link a
-Sigstore verifier: sigstore-go v1.3.0's verifier compiles in 71 modules (measured 2026-09-15). The
-agent also passes its
+Two kinds of plugins are trusted differently:
+
+- **Core plugins** — `sigstore` (the on-host Sigstore validator) and `sysfacts` are built in
+  `forge-agent-plugins`, bundled in every `forge-agent` package, enabled by default, and installed
+  root-owned and read-only. Operators may disable them in root-owned local configuration but cannot
+  replace them with binaries that are not core-signed. Each ships a
+  [DSSE](https://github.com/secure-systems-lab/dsse/blob/master/protocol.md) envelope over its name,
+  version, platform, SHA-256, and protocol versions, signed with a Forge core-plugin key (ECDSA P-256,
+  held in an HSM or cloud KMS and used only by the `forge-agent-plugins` release workflow). The agent
+  embeds the current and next public keys and verifies the envelope with standard-library ECDSA before
+  install and before every launch, so core-signed updates can arrive without a new agent release.
+- **Other plugins** — releases are signed with
+  [Sigstore](https://docs.sigstore.dev/cosign/signing/overview/) (cosign). `forge-provisioner` verifies
+  those signatures against trusted publisher identities when an operator imports a plugin release, and
+  records the verified SHA-256 digests, with each publisher identity, in the directive bundles it signs
+  with its environment service certificate. Before install, the downloaded digest must match the pin and
+  the core `sigstore` validator must verify the release's Sigstore bundle against that identity, using a
+  trusted root verified through [TUF](https://theupdateframework.github.io/specification/latest/). The
+  unprivileged agent process refreshes TUF metadata through the validator, with egress only to
+  Sigstore's TUF repository or a configured mirror; the network-free privileged executor verifies it.
+
+Before every launch, the agent re-checks the core signature or bundle pin, then pins the binary's
+SHA-256 through go-plugin's
+[`SecureConfig`](https://pkg.go.dev/github.com/hashicorp/go-plugin#SecureConfig). The agent binary links
+no Sigstore verifier: sigstore-go v1.3.0's verifier compiles in 71 modules, and the validator plugin that
+runs it links 79 with go-plugin (measured 2026-09-15). The agent also passes its
 environment ID to each plugin at startup, and a plugin refuses to serve an agent whose environment ID
 differs from the one it was configured for.
 
 - **`forge-agent-plugin-sdk`** — the stable contract plugins build against.
-- **`forge-agent-plugins`** — the first-party plugins maintained by the project.
+- **`forge-agent-plugins`** — the first-party plugins maintained by the project, including the core
+  plugins bundled with `forge-agent`.
 - **`forge-plugin-starter`** — the project-owned scaffold third parties clone to author their own.
 
 Note the distinction from the `go-*-starter` family: those are **external, general-purpose** baselines
@@ -465,11 +483,19 @@ Answers to this document's earlier open questions (2026-09-14 to 2026-09-15). Th
   pipeline. See [Forge's own infrastructure](#forges-own-infrastructure).
 - **Plugin transport** — gRPC through `hashicorp/go-plugin`, which handles the handshake, process
   lifecycle, and optional mutual TLS.
-- **Plugin signing** — Plugin releases carry Sigstore (cosign) signatures. `forge-provisioner` verifies
-  them against trusted publisher identities when a release is imported and pins the verified SHA-256
-  digests in the directive bundles it signs; agents verify the bundle signature and pin the SHA-256
-  through go-plugin `SecureConfig` before every launch. Verification stays off agents because
-  sigstore-go v1.3.0's verifier compiles in 71 modules (measured 2026-09-15).
+- **Plugin signing** — Core plugins (`sigstore`, the on-host Sigstore validator, and `sysfacts`) are
+  bundled in every `forge-agent` package, enabled by default, and root-owned and read-only; operators
+  may disable but not replace them. They carry DSSE signatures from a Forge core-plugin ECDSA P-256 key
+  held in an HSM or cloud KMS, which the agent verifies against embedded current and next public keys
+  before install and every launch. Other plugin releases carry Sigstore (cosign) signatures:
+  `forge-provisioner` verifies them against trusted publisher identities at import and pins the verified
+  SHA-256 digests, with the publisher identity, in the directive bundles it signs; a host installs one
+  only when the digest matches the pin and the core validator verifies the Sigstore bundle against that
+  identity with a TUF-verified trusted root. TUF metadata is refreshed by the unprivileged agent process
+  with egress only to Sigstore's TUF repository or a mirror, and verified in the network-free executor.
+  Every launch pins the SHA-256 through go-plugin `SecureConfig`. The agent binary links no Sigstore
+  verifier: sigstore-go v1.3.0's verifier compiles in 71 modules, confined to the validator plugin (79
+  with go-plugin; measured 2026-09-15).
 
 ## Open questions
 
@@ -513,7 +539,14 @@ None at present. Answered questions are recorded under
   over RPC/gRPC.
 - [Sigstore cosign](https://docs.sigstore.dev/cosign/signing/overview/) — artifact signing used for
   plugin executables.
-- [sigstore-go](https://github.com/sigstore/sigstore-go) — Sigstore verifier used by `forge-provisioner`.
+- [sigstore-go](https://github.com/sigstore/sigstore-go) — Sigstore verifier used by `forge-provisioner`
+  and the core `sigstore` validator plugin.
+- [DSSE](https://github.com/secure-systems-lab/dsse/blob/master/protocol.md) — signing envelope for core
+  plugin statements.
+- [The Update Framework specification](https://theupdateframework.github.io/specification/latest/) —
+  secure delivery of Sigstore's trusted root.
+- [sigstore/root-signing](https://github.com/sigstore/root-signing) — Sigstore's TUF repository,
+  published at `https://tuf-repo-cdn.sigstore.dev`.
 - [Kubernetes API versioning](https://kubernetes.io/docs/reference/using-api/#api-versioning) — model
   for `apiVersion`/`kind` desired-state documents.
 - [JSON Schema](https://json-schema.org/) — schema format published from `forge-api-schema`.
