@@ -93,7 +93,8 @@ authentication and authorization before routing to `forge-identity`, `forge-inve
 
 Agents use a dedicated `forge-gateway` listener authenticated with mutual TLS, using per-agent
 certificates issued by `forge-identity` at enrollment. It is separate from the operator and third-party
-entry point, so managed hosts never share an ingress with administrators.
+entry point, so managed hosts never share an ingress with administrators. See
+[Agent enrollment](#agent-enrollment).
 
 ## Repository inventory
 
@@ -104,7 +105,7 @@ entry point, so managed hosts never share an ingress with administrators.
 | `forge-sdk`              | Platform · Shared library          | Generated Go client SDK for the public API, published as a single Go module; used by `forge-cli`, `forge-agent`, and 3rd-party clients                                                                                                                                                                                                        | `go-library-starter`             |
 | `forge-common`           | Platform · Shared library          | Shared logging and telemetry: wraps the starters' zerolog logging, correlates logs with traces, and exports OpenTelemetry data over OTLP/HTTP without gRPC; used by every Forge Go repository                                                                                                                                                 | `go-library-starter`             |
 | `forge-gateway`          | Platform · Go service / API        | Edge/API gateway: routing, authN/Z enforcement, rate limiting; separate mutual-TLS ingress for agents                                                                                                                                                                                                                                         | `go-echo-starter`                |
-| `forge-identity`         | Platform · Go service / API        | Internal identity **and IdP**: internal SAML/OIDC provider for platform users; accounts, API tokens, RBAC/tenancy, session issuance                                                                                                                                                                                                           | `go-echo-starter`                |
+| `forge-identity`         | Platform · Go service / API        | Internal identity **and IdP**: internal SAML/OIDC provider for platform users; accounts, API tokens, RBAC/tenancy, session issuance; internal CA for agent certificates (enrollment tokens, CRL/OCSP)                                                                                                                                         | `go-echo-starter`                |
 | `forge-sso`              | Platform · Go service + site       | SSO federation broker: fronts login; authenticates against the internal `forge-identity` IdP or via SAML/OIDC exchange with an external IdP; hosts the login/SSO site                                                                                                                                                                         | `go-echo-starter`                |
 | `forge-cli`              | Platform · Go CLI                  | Operator CLI; talks to the gateway via `forge-sdk`                                                                                                                                                                                                                                                                                            | `go-cli-starter`                 |
 | `forge-infrastructure`   | Platform · Infra / deployment      | Ansible playbooks, roles, and inventories (YAML) that deploy the Forge microservices **themselves**, gated by Open Policy Agent (OPA) policies. Forge's *own* operational infra                                                                                                                                                               | — (Ansible + OPA; no Go starter) |
@@ -170,6 +171,37 @@ to deploy Forge itself:
 
 Separating the broker from the IdP and identity store lets the internet-facing SSO surface be hardened
 independently of the internal identity system.
+
+### Agent enrollment
+
+`forge-identity` runs an internal certificate authority (CA) for agent identities. Its intermediate CA
+signs agent certificates; the root CA stays offline in an HSM or cloud key-management service. A new
+agent bootstraps as follows, modeled on
+[`kubeadm join`](https://kubernetes.io/docs/reference/setup-tools/kubeadm/kubeadm-join/):
+
+1. **Create a token.** An operator creates an enrollment token with `forge-cli`. It is single-use,
+   short-lived (e.g. one hour), bound to a tenant and optional host labels, and carries the SHA-256 hash
+   of the Forge CA certificate.
+2. **Generate a key on the host.** `forge-agent` generates its private key locally, and the key never
+   leaves the host. It is stored in the TPM or OS keystore when one is available, otherwise in a file
+   readable only by the agent's user.
+3. **Verify the gateway.** The agent connects to the enrollment route on the agent ingress over regular
+   TLS and checks the gateway's certificate chain against the CA hash from the token. This is the only
+   route on the agent ingress that does not require a client certificate.
+4. **Request a certificate.** The agent sends a certificate signing request (CSR) with the token.
+   `forge-identity` validates the token, marks it used, and returns a certificate signed by the
+   intermediate CA.
+5. **Operate over mutual TLS.** All further agent traffic uses the certificate. The agent renews it over
+   its existing mutual-TLS connection at about two-thirds of its lifetime.
+
+Certificate lifetime and revocation:
+
+- **Lifetime** — configurable per tenant from 30 to 90 days, defaulting to 30 days.
+- **Revocation** — `forge-identity` publishes a certificate revocation list (CRL,
+  [RFC 5280](https://www.rfc-editor.org/rfc/rfc5280)) and runs an OCSP responder
+  ([RFC 6960](https://www.rfc-editor.org/rfc/rfc6960)). `forge-gateway` checks each agent certificate
+  with OCSP and caches the responses, falls back to the latest CRL when the responder is unreachable,
+  and rejects the agent when neither is available within the cache window (fail closed).
 
 ### Agent plugin ecosystem
 
@@ -267,7 +299,7 @@ A suggested order that keeps each step shippable and unblocks the next:
 
 ## Resolved decisions
 
-Answers to this document's earlier open questions (2026-09-14). The sections above reflect them.
+Answers to this document's earlier open questions (2026-09-14 to 2026-09-15). The sections above reflect them.
 
 - **Service decomposition depth** — Keep the current split. Revisit after the first domain slice
   (`forge-inventory` + `forge-cli`) proves the full request loop.
@@ -287,6 +319,11 @@ Answers to this document's earlier open questions (2026-09-14). The sections abo
   allocation cap and a timeout on every run; no `os` or file access on managed hosts.
 - **Trust zones** — A dedicated mutual-TLS agent ingress on `forge-gateway`, with per-agent certificates
   issued by `forge-identity`, kept apart from the operator and third-party entry point.
+- **Agent enrollment** — `forge-identity` runs an internal CA and signs CSRs presented with a single-use
+  enrollment token created in `forge-cli`; the token pins the CA hash for first contact. Keys are
+  generated on the host and hardware-backed when available. Certificates last 30–90 days per tenant
+  (default 30), with OCSP checks, CRL fallback, and fail-closed revocation. See
+  [Agent enrollment](#agent-enrollment).
 - **Plugin transport** — gRPC through `hashicorp/go-plugin`, which handles the handshake, process
   lifecycle, and optional mutual TLS.
 - **Plugin signing** — Sigstore (cosign) signatures verified against trusted publisher identities, plus
@@ -294,8 +331,8 @@ Answers to this document's earlier open questions (2026-09-14). The sections abo
 
 ## Open questions
 
-- **Agent enrollment** — how a new `forge-agent` proves its identity to `forge-identity` to receive its
-  first mutual-TLS certificate (e.g. one-time enrollment tokens), and how agent certificates rotate.
+- **Revocation cache window** — how long `forge-gateway` may rely on cached OCSP responses and the last
+  CRL before failing closed.
 - **Custom exporter footprint** — confirm the estimated ~8 linked third-party modules once the
   OTLP/HTTP exporter in `forge-common` is built, and whether to adopt the official exporter if
   opentelemetry-go#2579 is fixed.
@@ -330,3 +367,8 @@ Answers to this document's earlier open questions (2026-09-14). The sections abo
 - [Kubernetes API versioning](https://kubernetes.io/docs/reference/using-api/#api-versioning) — model
   for `apiVersion`/`kind` desired-state documents.
 - [JSON Schema](https://json-schema.org/) — schema format published from `forge-api-schema`.
+- [`kubeadm join`](https://kubernetes.io/docs/reference/setup-tools/kubeadm/kubeadm-join/) — token plus
+  CA-hash bootstrap model used for agent enrollment.
+- [RFC 5280](https://www.rfc-editor.org/rfc/rfc5280) — X.509 certificates and certificate revocation
+  lists (CRLs).
+- [RFC 6960](https://www.rfc-editor.org/rfc/rfc6960) — Online Certificate Status Protocol (OCSP).
