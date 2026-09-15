@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: Apache-2.0
+
+# License header policy, checked by license-eye (apache/skywalking-eyes) in
+# .github/workflows/800-call-license-headers.yaml. Every tracked file carries an
+# SPDX identifier in its own comment syntax. paths-ignore lists only files whose
+# format cannot hold a comment; keep it short so real content cannot hide in it.
+header:
+  license:
+    content: |
+      SPDX-License-Identifier: Apache-2.0
+  paths:
+    - "**"
+  paths-ignore:
+    - "LICENSE"
+    - "**/*.json"
+    - "**/.gitkeep"
+  comment: never
+  language:
+    Ignorefiles:
+      filenames: ["CODEOWNERS"]
+      comment_style_id: Hashtag

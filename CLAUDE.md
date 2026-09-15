@@ -1,3 +1,7 @@
+<!--
+  ~ SPDX-License-Identifier: Apache-2.0
+-->
+
 # CLAUDE.md
 
 Guidance for Claude Code working in this repository. This file covers project intent, conventions,
@@ -39,9 +43,9 @@ project repositories, not here.
   copies.
 - **New CI workflow**: file under `.github/workflows/` following the numeric-prefix convention
   (200 = PR-triggered, 300 = main-branch push, 100 = operational/release, 800 = reusable).
-- **Site tooling**: this repo has no build runner yet — drive Hugo with its CLI (see
-  `.claude/build-commands.md`). Introduce a `Taskfile`/`Makefile` only if the workflow grows to
-  need one.
+- **Site tooling**: drive Hugo with its CLI (see `.claude/build-commands.md`). `Taskfile.yaml` holds
+  only repository checks (`task lint:license`, which CI runs); add site tasks to it only if the
+  workflow grows to need them.
 
 ## Things to leave alone unless asked
 

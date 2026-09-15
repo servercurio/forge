@@ -1,3 +1,7 @@
+<!--
+  ~ SPDX-License-Identifier: Apache-2.0
+-->
+
 # Contributing
 
 Thanks for your interest in `forge`. This repository holds the **documentation, design assets, and

@@ -1,3 +1,7 @@
+<!--
+  ~ SPDX-License-Identifier: Apache-2.0
+-->
+
 # Repository Structure
 
 This repo is currently **scaffolding only** — the config and meta files are present; the Hugo site

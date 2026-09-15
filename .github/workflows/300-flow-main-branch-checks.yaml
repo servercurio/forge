@@ -1,0 +1,25 @@
+# SPDX-License-Identifier: Apache-2.0
+
+name: "300: [FLOW] Main Branch Checks"
+on:
+  push:
+    branches:
+      - main
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: main-checks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  license-headers:
+    name: "License Headers"
+    uses: ./.github/workflows/800-call-license-headers.yaml
+    with:
+      custom-job-label: Standard
