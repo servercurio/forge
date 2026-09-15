@@ -25,6 +25,7 @@ alternatives considered, and tracks its status as the decision matures.
 | [0012](0012-forge-agent.md)            | forge-agent            | Draft  | 2026-09-15 |
 | [0013](0013-forge-agent-plugin-sdk.md) | forge-agent-plugin-sdk | Draft  | 2026-09-15 |
 | [0014](0014-forge-agent-plugins.md)    | forge-agent-plugins    | Draft  | 2026-09-15 |
+| [0015](0015-forge-plugin-starter.md)   | forge-plugin-starter   | Draft  | 2026-09-15 |
 
 ## Statuses
 
