@@ -134,6 +134,23 @@ convention says so under Alternatives considered and links the convention it bre
   `forge.environment.*` attributes; custom metrics are named `forge.<component>.<name>`. Propagation is
   W3C Trace Context only, with no baggage. Spans and logs never contain `x-forge-sensitive` data.
 
+## Deployment artifacts
+
+Forge deploys to Kubernetes, Docker/Podman hosts, and supported operating systems
+([0001](0001-project-repositories.md#forges-own-infrastructure)), so every service repository ships:
+
+- **OCI image** — multi-architecture (`linux/amd64`, `linux/arm64`), non-root, referenced by digest, and
+  signed; used by the Kubernetes, Podman, and Docker targets.
+- **Helm chart** — in `charts/<repository>/`, as in `go-echo-starter`, including an enrollment init
+  container that uses the same image and the pod's projected service account token.
+- **Linux packages** — signed deb and rpm packages with a hardened systemd unit, for Enterprise Linux and
+  Debian/Ubuntu LTS on amd64 and arm64.
+- **Windows package** — a signed MSI that installs the service as a Windows service on Windows Server.
+
+Quadlet units and Compose files are rendered by `forge-infrastructure` roles, not kept in service
+repositories. Configuration, health probes, and enrollment behave the same on every target; only the
+credential for first enrollment differs (a single-use token file, or a projected service account token).
+
 ## Dependencies, build, and release
 
 - Every new direct dependency is justified in its document with version and what it pulls in. Libraries

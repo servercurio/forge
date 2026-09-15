@@ -213,8 +213,8 @@ None. Documents live in Git; the module holds no runtime state.
   empty `security: []` is allowed only on an allowlisted set: enrollment and health.
 - **Audiences bound exposure.** The gateway builds its route tables from `x-forge-audience`, so an
   operation is never reachable on an ingress it was not declared for ([0008](0008-forge-gateway.md)).
-- **Secrets are marked.** Tokens and enrollment tokens carry `x-forge-sensitive: true`. The SDK redacts
-  them and `forge-common` logging rules exclude them.
+- **Secrets are marked.** Tokens, enrollment tokens, and projected service account tokens carry
+  `x-forge-sensitive: true`. The SDK redacts them and `forge-common` logging rules exclude them.
 - **Review.** `CODEOWNERS` requires the identity and gateway owners on changes to security schemes,
   `security`, or `x-forge-audience`.
 - **Supply chain.** Generators are pinned by version, and releases publish the starters' signed SBOMs.
