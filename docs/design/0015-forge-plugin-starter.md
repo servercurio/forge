@@ -17,9 +17,9 @@
 0001 defines `forge-plugin-starter` as "the project-owned scaffold third parties clone to author their
 own" plugins. Unlike the general-purpose `go-*-starter` baselines, it is Forge-specific and depends on
 `forge-agent-plugin-sdk`
-([Agent plugin ecosystem](0001-project-repositories.md#agent-plugin-ecosystem)). Agents run only
-plugins whose cosign signature matches a trusted publisher, so a correct release pipeline must be the
-default.
+([Agent plugin ecosystem](0001-project-repositories.md#agent-plugin-ecosystem)). `forge-provisioner`
+imports only plugin releases whose cosign signature matches a trusted publisher, and agents run only the
+digests it pins, so a correct release pipeline must be the default.
 
 **Goals**
 
