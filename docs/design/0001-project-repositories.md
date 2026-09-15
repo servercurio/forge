@@ -105,7 +105,7 @@ entry point, so managed hosts never share an ingress with administrators. See
 | `forge-sdk`              | Platform · Shared library          | Generated Go client SDK for the public API, published as a single Go module; used by `forge-cli`, `forge-agent`, and 3rd-party clients                                                                                                                                                                                                        | `go-library-starter`             |
 | `forge-common`           | Platform · Shared library          | Shared logging and telemetry: wraps the starters' zerolog logging, correlates logs with traces, and exports OpenTelemetry data over OTLP/HTTP without gRPC; used by every Forge Go repository                                                                                                                                                 | `go-library-starter`             |
 | `forge-gateway`          | Platform · Go service / API        | Edge/API gateway: routing, authN/Z enforcement, rate limiting; separate mutual-TLS ingress for agents                                                                                                                                                                                                                                         | `go-echo-starter`                |
-| `forge-identity`         | Platform · Go service / API        | Internal identity **and IdP**: internal SAML/OIDC provider for platform users; accounts, API tokens, RBAC/tenancy, session issuance; internal CA for agent certificates (enrollment tokens, CRL/OCSP)                                                                                                                                         | `go-echo-starter`                |
+| `forge-identity`         | Platform · Go service / API        | Internal identity **and IdP**: internal SAML/OIDC provider for platform users; accounts, API tokens, RBAC/tenancy, session issuance; internal CA for service and agent certificates (enrollment tokens, CRL/OCSP)                                                                                                                             | `go-echo-starter`                |
 | `forge-sso`              | Platform · Go service + site       | SSO federation broker: fronts login; authenticates against the internal `forge-identity` IdP or via SAML/OIDC exchange with an external IdP; hosts the login/SSO site                                                                                                                                                                         | `go-echo-starter`                |
 | `forge-cli`              | Platform · Go CLI                  | Operator CLI; talks to the gateway via `forge-sdk`                                                                                                                                                                                                                                                                                            | `go-cli-starter`                 |
 | `forge-infrastructure`   | Platform · Infra / deployment      | Ansible playbooks, roles, and inventories (YAML) that deploy the Forge microservices **themselves**, gated by Open Policy Agent (OPA) policies. Forge's *own* operational infra                                                                                                                                                               | — (Ansible + OPA; no Go starter) |
@@ -168,14 +168,18 @@ to deploy Forge itself:
 - **`forge-sso`** is the federation broker that fronts login. It authenticates users either against the
   internal `forge-identity` IdP *or* via SAML/OIDC token exchange with an external IdP (Okta, Auth0, …).
   Either path resolves to a `forge-identity` principal.
+- **Tokens are environment-bound.** Both services sign tokens with keys belonging to the environment
+  and include its environment ID; see [Environment identity](#environment-identity).
 
 Separating the broker from the IdP and identity store lets the internet-facing SSO surface be hardened
 independently of the internal identity system.
 
 ### Agent enrollment
 
-`forge-identity` runs an internal certificate authority (CA) for agent identities. Its intermediate CA
-signs agent certificates; the root CA stays offline in an HSM or cloud key-management service. The
+`forge-identity` runs the environment's internal certificate authority (CA). Its intermediate CA signs
+agent and service certificates; the environment root CA (see
+[Environment identity](#environment-identity)) stays offline in an HSM or cloud key-management service.
+The
 intermediate CA key is held in one of two backends:
 
 - **HSM or cloud KMS (preferred)** — `forge-identity` signs through the HSM or KMS API, so the key never
@@ -192,17 +196,18 @@ A new agent bootstraps as follows, modeled on
 
 1. **Create a token.** An operator creates an enrollment token with `forge-cli`. It is single-use, valid
    for 1 hour by default (operators may set up to 24 hours per token for batch provisioning), bound to an
-   environment, a tenant, and optional host labels, and carries the SHA-256 hash of that environment's
-   CA certificate.
+   environment, a tenant, and optional host labels, and carries the environment ID and the SHA-256 hash
+   of that environment's CA certificate.
 2. **Generate a key on the host.** `forge-agent` generates its private key locally, and the key never
    leaves the host. It is stored in the TPM or OS keystore when one is available, otherwise in a file
    readable only by the agent's user.
 3. **Verify the gateway.** The agent connects to the enrollment route on the agent ingress over regular
-   TLS and checks the gateway's certificate chain against the CA hash from the token. This is the only
+   TLS and checks the gateway's certificate chain against the CA hash from the token, and its SPIFFE ID
+   against the token's environment ID. This is the only
    route on the agent ingress that does not require a client certificate.
 4. **Request a certificate.** The agent sends a certificate signing request (CSR) with the token.
    `forge-identity` validates the token, marks it used, and returns a certificate signed by the
-   intermediate CA.
+   intermediate CA that carries the agent's SPIFFE ID (`spiffe://<environment-id>/agent/<agent-id>`).
 5. **Operate over mutual TLS.** All further agent traffic uses the certificate. The agent renews it over
    its existing mutual-TLS connection at two-thirds of its lifetime (e.g. day 20 of a 30-day
    certificate), leaving the final third to retry through outages.
@@ -228,7 +233,9 @@ Plugins talk to `forge-agent` over gRPC using [`hashicorp/go-plugin`](https://gi
 Before every launch, the agent verifies the plugin's
 [Sigstore](https://docs.sigstore.dev/cosign/signing/overview/) (cosign) signature against trusted
 publisher identities, then pins the binary's SHA-256 through go-plugin's
-[`SecureConfig`](https://pkg.go.dev/github.com/hashicorp/go-plugin#SecureConfig).
+[`SecureConfig`](https://pkg.go.dev/github.com/hashicorp/go-plugin#SecureConfig). The agent also passes its
+environment ID to each plugin at startup, and a plugin refuses to serve an agent whose environment ID
+differs from the one it was configured for.
 
 - **`forge-agent-plugin-sdk`** — the stable contract plugins build against.
 - **`forge-agent-plugins`** — the first-party plugins maintained by the project.
@@ -308,11 +315,37 @@ Every Forge component — the services, `forge-cli`, `forge-agent`, agent plugin
 - **Last-resort features gated** — features marked last resort or testing-only, such as the KEK-sealed
   CA key store, are refused in `production` unless explicitly overridden, and every override is logged.
 - **Isolation** — each environment has its own CA, enrollment tokens, and credentials. A service or
-  agent from one environment is rejected by another.
+  agent from one environment is rejected by another; see [Environment identity](#environment-identity).
 - **Tagged logs and telemetry** — `forge-common` adds the environment name to every log event and sets
   the OpenTelemetry
   [`deployment.environment.name`](https://opentelemetry.io/docs/specs/semconv/registry/attributes/deployment/)
   resource attribute on exported telemetry.
+
+### Environment identity
+
+Every environment has a cryptographic identity, so each component can prove it is talking to the correct
+deployment:
+
+- **Environment ID** — a random, stable ID generated when the environment is created and embedded in the
+  environment's root CA certificate as its SPIFFE trust domain (`spiffe://<environment-id>`). During root
+  CA rotation, components trust the old and new roots together; both carry the same ID, so the identity
+  survives rotation.
+- **Certificates** — every Forge certificate carries one SPIFFE ID, such as
+  `spiffe://<environment-id>/service/forge-inventory` or `spiffe://<environment-id>/agent/<agent-id>`,
+  in the [X.509-SVID](https://github.com/spiffe/spiffe/blob/main/standards/X509-SVID.md) format. A peer is
+  trusted only if its certificate chains to the environment's root and its SPIFFE ID names the same
+  environment. Forge uses the SPIFFE ID format without running SPIRE.
+- **Service-to-service** — all internal calls between Forge services use mutual TLS with these
+  certificates, issued by the environment's intermediate CA in `forge-identity`.
+- **Agents and plugins** — the enrollment token carries the environment ID, and the agent checks it
+  against the gateway's certificate before enrolling. The agent passes its environment ID to plugins,
+  which refuse to serve an agent from a different environment.
+- **User and API tokens** — tokens from `forge-identity` and `forge-sso` are signed with keys belonging
+  to the environment and carry its ID (e.g. in the issuer and audience claims), so a token from one
+  environment is rejected in another.
+- **`forge-cli` and infrastructure** — each `forge-cli` profile pins an environment ID and CA bundle and
+  verifies the gateway before sending credentials. `forge-infrastructure` inventories supply each
+  environment's ID and CA bundle to the services they deploy.
 
 ## Bootstrapping a repository from a starter
 
@@ -380,6 +413,10 @@ Answers to this document's earlier open questions (2026-09-14 to 2026-09-15). Th
   (`production`, `staging`, `test`, `development`) at startup and refuses to start without them. The
   tier drives hardened defaults, gates last-resort features, isolates CAs and credentials, and is tagged
   on all logs and telemetry. See [Environment awareness](#environment-awareness).
+- **Environment identity** — A stable environment ID anchored in each environment's root CA and carried
+  as a SPIFFE ID in every Forge certificate. Service-to-service mTLS, agents and plugins, user and API
+  tokens, `forge-cli`, and `forge-infrastructure` all verify it. See
+  [Environment identity](#environment-identity).
 - **Plugin transport** — gRPC through `hashicorp/go-plugin`, which handles the handshake, process
   lifecycle, and optional mutual TLS.
 - **Plugin signing** — Sigstore (cosign) signatures verified against trusted publisher identities, plus
@@ -387,8 +424,9 @@ Answers to this document's earlier open questions (2026-09-14 to 2026-09-15). Th
 
 ## Open questions
 
-None at present. Answered questions are recorded under
-[Resolved decisions](#resolved-decisions).
+- **Service certificate bootstrap** — how each Forge service, including `forge-identity` itself, obtains
+  its first environment certificate before `forge-identity` can issue one (e.g. provisioned by
+  `forge-infrastructure` from the offline root).
 
 ## References
 
@@ -427,3 +465,7 @@ None at present. Answered questions are recorded under
 - [RFC 5280](https://www.rfc-editor.org/rfc/rfc5280) — X.509 certificates and certificate revocation
   lists (CRLs).
 - [RFC 6960](https://www.rfc-editor.org/rfc/rfc6960) — Online Certificate Status Protocol (OCSP).
+- [SPIFFE ID](https://github.com/spiffe/spiffe/blob/main/standards/SPIFFE-ID.md) — URI format for
+  environment and workload identities.
+- [X.509-SVID](https://github.com/spiffe/spiffe/blob/main/standards/X509-SVID.md) — how a SPIFFE ID is carried in an
+  X.509 certificate.
