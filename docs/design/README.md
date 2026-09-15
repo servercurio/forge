@@ -17,6 +17,7 @@ alternatives considered, and tracks its status as the decision matures.
 | [0004](0004-forge-common.md)         | forge-common         | Draft  | 2026-09-15 |
 | [0005](0005-forge-infrastructure.md) | forge-infrastructure | Draft  | 2026-09-15 |
 | [0006](0006-forge-identity.md)       | forge-identity       | Draft  | 2026-09-15 |
+| [0007](0007-forge-sso.md)            | forge-sso            | Draft  | 2026-09-15 |
 
 ## Statuses
 

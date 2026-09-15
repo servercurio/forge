@@ -1,0 +1,325 @@
+# 0007 — forge-sso
+
+- **Status:** Draft
+- **Owner:** Nathan Klick
+- **Date:** 2026-09-15
+- **Summary:** `forge-sso` is the internet-facing login site and federation broker. It renders the login,
+  tenant selection, and device verification pages for `forge-identity`'s login challenges, and
+  authenticates users with local credentials or through OIDC and SAML exchanges with external IdPs,
+  always resolving to a `forge-identity` principal. It keeps no database, and `forge-cli` logs in with
+  the OAuth 2.0 device authorization grant.
+
+> An initial draft with concrete proposals, bounded by the
+> [Resolved decisions](0001-project-repositories.md#resolved-decisions) in 0001. Conventions other
+> repositories depend on are summarized in [CONVENTIONS.md](CONVENTIONS.md).
+
+## Context & goals
+
+0001 makes `forge-sso` the federation broker that fronts login and hosts the login site, authenticating
+against the internal `forge-identity` IdP or an external SAML/OIDC IdP, with either path resolving to a
+`forge-identity` principal ([Auth split](0001-project-repositories.md#auth-split)). It exists as a
+separate service so the internet-facing surface can be hardened apart from the identity store, and its
+tokens are environment-bound ([Environment identity](0001-project-repositories.md#environment-identity)).
+[0006](0006-forge-identity.md) proposes the login-challenge model this document implements.
+
+**Goals**
+
+- A small, server-rendered login site that meets WCAG 2.2 AA and works without JavaScript except for
+  WebAuthn.
+- Federation with external OIDC and SAML IdPs, configured per tenant.
+- A `forge-cli` login that never handles the user's password and pins the environment.
+- Hardening appropriate for the only Forge surface that anonymous browsers reach.
+
+**Non-goals**
+
+- Issuing access, refresh, or API tokens, and storing accounts or sessions —
+  [0006](0006-forge-identity.md).
+- Operator administration pages; configuration is through `forge-cli` and the identity API.
+- CLI profile storage — [0010](0010-forge-cli.md).
+
+## Proposal
+
+### Responsibilities
+
+- Render login, second-factor, tenant selection, consent, device verification, logout, and error pages.
+- Accept or reject `forge-identity` login challenges and device approvals.
+- Act as OIDC relying party and SAML service provider for each configured external IdP.
+- Seal short-lived flow state in cookies; hold no persistent state of its own.
+
+### Interfaces
+
+#### Browser routes
+
+HTML routes on the service's own public host (for example `login.qa-east.example.net`). They are not a
+JSON API, so they have no OpenAPI document (0002: `forge-sso` adds documents only for JSON APIs).
+
+| Route                                     | Purpose                                                         |
+|-------------------------------------------|-----------------------------------------------------------------|
+| `GET /login?login_challenge=`             | Choose a method: local account or a tenant's IdP                |
+| `POST /login/password`, `/login/webauthn` | Local credentials, verified by `forge-identity`                 |
+| `GET /idp/{providerId}/start`             | Begin an external OIDC or SAML login                            |
+| `GET /idp/{providerId}/oidc/callback`     | OIDC authorization response                                     |
+| `POST /idp/{providerId}/saml/acs`         | SAML assertion consumer service (HTTP-POST binding)             |
+| `GET /idp/{providerId}/saml/metadata`     | SP metadata for the external IdP                                |
+| `GET/POST /tenant`                        | Choose a tenant when a principal belongs to several             |
+| `GET/POST /device`                        | Enter and confirm a device user code                            |
+| `POST /logout`                            | End the session at `forge-identity` and clear cookies           |
+
+Health probes stay at `/livez`, `/readyz`, and `/healthz` (CONVENTIONS) on a separate private port.
+
+#### Internal calls
+
+`forge-sso` calls `forge-identity`'s `internal` operations (0006) over TLS 1.3 mutual TLS with its
+`spiffe://<environment-id>/service/forge-sso` certificate, using the `forge-sdk` identity client:
+`login-challenges`, `password-verifications`, `webauthn-assertions`, `federated-logins`, and
+`device-approvals`. External IdP settings are read from `identity-providers` and cached for 60 seconds.
+
+#### Browser login with an external IdP
+
+```
+browser ──► gateway ──► identity /authorize ──302──► sso /login?login_challenge=L
+browser ──► sso /idp/okta/start ──302──► Okta (state, nonce, PKCE S256)
+Okta ──302──► sso /idp/okta/oidc/callback?code&state&iss
+sso ──mTLS──► identity POST federated-logins {providerId, verified claims, challenge L}
+                  └─ resolves (providerId, sub) to a principal, or JIT-provisions if enabled
+sso ──mTLS──► identity PUT login-challenges/L {accept} ──► redirect back to /authorize ──► code
+```
+
+- **OIDC RP** — [`coreos/go-oidc/v3`](https://github.com/coreos/go-oidc) with
+  [`golang.org/x/oauth2`](https://pkg.go.dev/golang.org/x/oauth2): authorization code, PKCE S256,
+  `state` and `nonce`, ID token signature, `iss`, `aud`, and `exp` checks, and the `iss` response
+  parameter where the IdP supports it ([RFC 9207](https://www.rfc-editor.org/rfc/rfc9207)). Clients
+  authenticate with `private_key_jwt` where supported, otherwise a client secret from `forge-identity`.
+- **SAML SP** — [`russellhaering/gosaml2`](https://github.com/russellhaering/gosaml2): signed
+  assertions required, `InResponseTo` matched to the flow, audience equal to the SP entity ID, 2-minute
+  clock skew, and assertion IDs remembered until expiry to block replay.
+- **Principal resolution** — by the pair of provider ID and the IdP's stable subject (`sub` or a
+  persistent `NameID`), never by email alone, which would let a second IdP claim an existing account.
+  Group-to-role mappings are applied by `forge-identity`.
+
+#### `forge-cli` login: device authorization grant
+
+Proposed: [RFC 8628](https://www.rfc-editor.org/rfc/rfc8628), which fits CLIs on remote hosts without a
+browser.
+
+```
+forge-cli ──► gateway ──► identity POST /identity/oidc/<env-id>/device-authorization
+              {client_id: forge-cli, scope}      ◄── device_code, user_code, verification_uri, interval
+forge-cli prints: "Open https://login.qa-east.example.net/device and enter BCDF-GHJK"
+browser ──► sso /device ──► login (any method) ──► confirm page shows client, environment, tier, tenant
+sso ──mTLS──► identity POST device-approvals {userCode, decision}
+forge-cli ──► gateway ──► identity POST /token (grant_type=device_code), every `interval` seconds
+                                                  ◄── access token (10m), refresh token (rotating)
+```
+
+- **Environment pinning** — `forge-cli` sends the device request only after `forge-sdk` has verified
+  the gateway against the profile's environment ID and CA bundle (0003), and rejects tokens whose
+  `iss` names another environment.
+- **User codes** — 8 characters from RFC 8628's 20-letter consonant alphabet, input accepted in any
+  case and with or without the hyphen. Attempts are rate-limited in `forge-identity`, following
+  RFC 8628 §5.1.
+- **Remote phishing** — the confirm page names the client, the environment name and tier, and the
+  request time, and asks the user to confirm the code came from their own terminal (RFC 8628 §5.4).
+- **No `verification_uri_complete`** — it would place the user code in a URL, which CONVENTIONS
+  forbids.
+- **Polling** honors `interval` and `slow_down` (RFC 8628 §3.5).
+
+### Dependencies
+
+Measured on 2026-09-15 with throwaway modules (`go list -deps`, Go 1.27.1):
+
+| Module                              | Version  | Linked modules                                                  |
+|-------------------------------------|----------|-----------------------------------------------------------------|
+| `github.com/coreos/go-oidc/v3`       | v3.21.0  | 3 with `x/oauth2` and `go-jose/v4`                              |
+| `golang.org/x/oauth2`                | v0.37.0  | 1                                                               |
+| `github.com/russellhaering/gosaml2`  | v0.12.0  | 5: `goxmldsig` v1.6.1, `etree`, `clockwork`, `xml-roundtrip-validator` |
+
+- **Starter** — Echo v5 kept. pgx, bun, goose, and swaggo are removed because the service has no
+  database or OpenAPI document.
+- **Standard library** — `html/template` for pages, `crypto/aes` and `crypto/cipher` for sealed
+  cookies, and [`http.CrossOriginProtection`](https://pkg.go.dev/net/http#CrossOriginProtection)
+  (Go 1.25+) for CSRF.
+- **WebAuthn** — a hand-written script of about 100 lines calling `navigator.credentials.get`; the
+  server-side check is in `forge-identity`.
+- **Forge** — `forge-sdk` (identity client, `pkg/tlsconfig`), `forge-common`.
+
+### Data & storage
+
+No database. State lives in three places:
+
+- **`forge-identity`** — sessions, login challenges, federated links, IdP configuration, and attempt
+  counters.
+- **Flow cookie** `__Host-forge-flow` — AES-256-GCM sealed `{challengeId, providerId, state, nonce,
+  pkceVerifier, samlRequestId, environmentId, expiresAt}`, 10 minutes, with the environment ID as
+  associated data.
+- **Session cookie** `__Host-forge-session` — an opaque reference to the `forge-identity` session,
+  which enforces idle and absolute timeouts.
+
+The sealing key is per environment, read from `cookies.keyFile`, and rotated with a previous key
+accepted for 24 hours. A cookie sealed in another environment fails to open.
+
+### Security
+
+#### Cookies and CSRF
+
+- Both cookies use the `__Host-` prefix, `Secure`, `HttpOnly`, and `Path=/`, following the
+  [OWASP Session Management Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html).
+- `__Host-forge-session` is `SameSite=Lax`. `__Host-forge-flow` is `SameSite=None`, because the SAML
+  HTTP-POST binding returns as a cross-site POST; its contents are useless without the matching
+  `state` or `InResponseTo`.
+- `http.CrossOriginProtection` rejects cross-origin non-safe requests using `Sec-Fetch-Site` and
+  `Origin`, with one bypass pattern, `POST /idp/{providerId}/saml/acs`, protected instead by the signed
+  response and `InResponseTo`. Forms also carry the starter's CSRF token (`form:csrf`) for browsers that
+  send neither header.
+
+#### Response headers
+
+| Header                      | Value                                                                                     |
+|-----------------------------|-------------------------------------------------------------------------------------------|
+| `Content-Security-Policy`   | `default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'` |
+| `Strict-Transport-Security` | starter default, one year with subdomains                                                 |
+| `Referrer-Policy`           | `no-referrer`, so codes and challenges in callback URLs do not leak                       |
+| `Cache-Control`             | `no-store` on every page                                                                  |
+| `X-Frame-Options`           | `DENY`, from the starter's secure middleware                                               |
+
+No inline scripts or styles, and no third-party scripts, fonts, or analytics. Whether browsers apply
+`form-action` to redirects after a form POST, which would block redirects to external IdPs, is
+unverified; if they do, provider origins are added per response.
+
+#### Rate limits and abuse
+
+- Per-client-IP limits through the starter's rate limiter, plus a listener `maxConnections` cap.
+- Per-account and per-user-code attempt counters live in `forge-identity`, so limits hold across
+  `forge-sso` instances.
+- Errors never reveal whether an account exists, and login pages avoid CAPTCHAs (see Accessibility).
+
+#### Other controls
+
+- Redirects go only to URLs returned by `forge-identity`, which matches registered redirect URIs
+  exactly; `forge-sso` has no open redirect parameter.
+- External IdP metadata and JWKS are fetched only over HTTPS and only from hosts in the provider record.
+- Authorization codes and SAML responses appear in URLs or bodies as their standards require; access
+  logs record `http.route`, never the query string.
+- `forge-sso` holds no token-signing keys. Tokens always come from `forge-identity` (0006); the only
+  secrets here are the cookie sealing key and RP credentials.
+
+### Accessibility
+
+The login site targets [WCAG 2.2](https://www.w3.org/TR/WCAG22/) Level AA:
+
+- **Accessible Authentication (Minimum), SC 3.3.8** — no cognitive tests; paste and password managers
+  work; `autocomplete="username"`, `current-password`, and `one-time-code` are set.
+  WebAuthn and federated login are offered alongside passwords
+  ([Understanding SC 3.3.8](https://www.w3.org/WAI/WCAG22/Understanding/accessible-authentication-minimum.html)).
+- **Structure** — one `h1` per page, `lang` set, native form controls with visible labels, an error
+  summary that receives focus and links to each field, and `aria-describedby` for field errors.
+- **Visuals** — text contrast of at least 4.5:1, visible focus indicators, no information by color
+  alone, layouts that reflow at 320 CSS pixels, and `prefers-reduced-motion` respected.
+- **Timing** — the 10-minute flow limit is shown on the page, and an expired flow restarts cleanly with
+  entered usernames kept (SC 2.2.1).
+- **Logo** — the Server Curio mark is an inline SVG with a `<title>`, copied from
+  `forge/docs/images/logo.svg` at build time with its checksum recorded.
+
+### Environment awareness
+
+- `production` and `staging` serve pages only over HTTPS; the plain HTTP listener only redirects.
+- `development` may serve pages over HTTP on loopback, where browsers treat `localhost` as a secure
+  context; any other plaintext use is refused.
+- Every page footer shows the environment name, and non-`production` tiers show a visible tier banner so
+  users notice they are signing in to the wrong environment.
+
+### Logging & telemetry
+
+- Access logs use CONVENTIONS fields with `http.route` in place of `url.path`.
+- Login outcomes are logged with `forge.sso.method` (`password`, `webauthn`, `oidc`, `saml`,
+  `device`), `forge.sso.provider.id`, and `forge.tenant.id`; `forge-identity` records the audit event.
+- Metrics: `forge.sso.logins` by method and outcome, `forge.sso.idp.request.duration`, and
+  `forge.sso.ratelimit.rejections`.
+
+### Configuration
+
+Prefix `FORGE_SSO_`, plus the starter's `server` block and CONVENTIONS' `logging`, `telemetry`,
+`environment`, and `gateway` blocks.
+
+| YAML                          | Variable                               | Default                        |
+|-------------------------------|----------------------------------------|--------------------------------|
+| `publicUrl`                   | `FORGE_SSO_PUBLIC_URL`                 | none — required                |
+| `identity.url`                | `FORGE_SSO_IDENTITY_URL`               | none — required, internal      |
+| `cookies.keyFile`             | `FORGE_SSO_COOKIES_KEY_FILE`           | none — required                |
+| `cookies.previousKeyFile`     | `FORGE_SSO_COOKIES_PREVIOUS_KEY_FILE`  | empty                          |
+| `flow.ttl`                    | `FORGE_SSO_FLOW_TTL`                   | `10m`                          |
+| `idp.cacheTtl`                | `FORGE_SSO_IDP_CACHE_TTL`              | `60s`                          |
+| `idp.clockSkew`               | `FORGE_SSO_IDP_CLOCK_SKEW`             | `2m`                           |
+| `server.rateLimit.rate`       | `FORGE_SSO_SERVER_RATE_LIMIT_RATE`     | `5` per second per IP, by tier |
+
+`server.security.contentSecurityPolicy`, `server.csrf.enabled`, and `server.csrf.cookieSecure` are fixed
+by the service in hardened tiers rather than left to configuration.
+
+### Build, release & versioning
+
+- Bootstrap from `go-echo-starter`; remove the database and OpenAPI generator, and embed templates and
+  static assets with `embed`.
+- Pages are a stable URL surface for external IdP registrations: changing a callback path is a breaking
+  change even though no API version is involved.
+- `v0.x` until accepted.
+
+### Testing
+
+- **Flows** — end-to-end tests against a fake OIDC IdP and a fake SAML IdP: wrong `state`, replayed
+  assertion, unsigned assertion, wrong audience, expired flow, and cookies from another environment.
+- **Headers and cookies** — table tests assert CSP, `__Host-` attributes, and cross-origin rejection.
+- **Accessibility** — automated axe-core checks through Playwright in CI, run with `npx` so no Node
+  dependency enters the Go module, plus a manual screen reader and keyboard pass before each release.
+- **Fuzzing** — sealed cookie decoding and user-code normalization.
+
+## Alternatives considered
+
+- **Loopback redirect with PKCE for `forge-cli`** ([RFC 8252](https://www.rfc-editor.org/rfc/rfc8252)) —
+  smoother on desktops, but fails on remote hosts. Could be added beside the device grant.
+- **Resource owner password grant in `forge-cli`** — the CLI would handle passwords, and RFC 9700
+  forbids it.
+- **`forge-sso` as the OIDC provider itself** — puts protocol logic and signing keys on the exposed
+  surface, against 0001's reason for the split.
+- **[`crewjam/saml`](https://github.com/crewjam/saml) `samlsp`** — 7 linked modules including
+  `golang-jwt/jwt/v4`, and slower releases than `gosaml2`.
+- **[`gorilla/csrf`](https://github.com/gorilla/csrf) alone** — an extra module; the standard library now
+  covers the header-based check.
+- **Server-side flow state in PostgreSQL** — survives cookie loss, but gives `forge-sso` a database to
+  harden.
+- **A JavaScript single-page login app** — richer UI, larger attack and accessibility surface.
+
+## Open questions
+
+- **Rate-limit state** — per-instance memory limits diverge across replicas; is `forge-identity`-backed
+  counting enough, or is a shared limiter needed?
+- **`form-action` and redirects** — confirm browser behavior before fixing the CSP.
+- **Consent** — skip consent for first-party clients like `forge-cli` (proposed), or always show it?
+- **Internal SDK clients** — this design needs `forge-sdk` clients for `internal` operations, which
+  0003 leaves open.
+- **Public host** — one login host per environment (proposed), or a shared host with environment paths?
+- **Localization** — English only at first, or translations from the start?
+
+## References
+
+- [0001 — Project Repositories](0001-project-repositories.md) — auth split, environment identity,
+  environment awareness.
+- [0003 — forge-sdk](0003-forge-sdk.md), [0006 — forge-identity](0006-forge-identity.md),
+  [CONVENTIONS.md](CONVENTIONS.md).
+- [RFC 8628](https://www.rfc-editor.org/rfc/rfc8628) — device authorization grant, §3.5 polling, §5.1
+  user codes, §5.4 remote phishing.
+- [RFC 7636](https://www.rfc-editor.org/rfc/rfc7636), [RFC 8252](https://www.rfc-editor.org/rfc/rfc8252),
+  [RFC 9207](https://www.rfc-editor.org/rfc/rfc9207), [RFC 9700](https://www.rfc-editor.org/rfc/rfc9700).
+- [OpenID Connect Core](https://openid.net/specs/openid-connect-core-1_0.html);
+  [SAML 2.0](https://docs.oasis-open.org/security/saml/v2.0/).
+- [coreos/go-oidc](https://github.com/coreos/go-oidc), [golang.org/x/oauth2](https://pkg.go.dev/golang.org/x/oauth2),
+  [russellhaering/gosaml2](https://github.com/russellhaering/gosaml2),
+  [goxmldsig](https://github.com/russellhaering/goxmldsig).
+- [`net/http.CrossOriginProtection`](https://pkg.go.dev/net/http#CrossOriginProtection) — added in Go 1.25.
+- [OWASP Session Management Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html)
+  and [CSRF Prevention Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html).
+- [WCAG 2.2](https://www.w3.org/TR/WCAG22/) and
+  [Understanding SC 3.3.8](https://www.w3.org/WAI/WCAG22/Understanding/accessible-authentication-minimum.html).
+- [MDN cookie prefixes](https://developer.mozilla.org/en-US/docs/Web/HTTP/Cookies#cookie_prefixes).
+- [axe-core](https://github.com/dequelabs/axe-core) and [Playwright](https://playwright.dev/).
+- [go-echo-starter](https://github.com/servercurio/go-echo-starter) — `config_csrf.go`,
+  `config_security.go`, `config_ratelimit.go`.
