@@ -1,3 +1,7 @@
+<!--
+  ~ SPDX-License-Identifier: Apache-2.0
+-->
+
 # Conventions
 
 - **Content lives in Markdown.** Author pages as Markdown under `content/` with front matter.
@@ -10,6 +14,11 @@
 - **Prefer relative links** between content pages so the site builds correctly under any base URL.
 - **Accessibility is not optional.** Every image carries meaningful `alt` text; SVGs used as
   content carry a `<title>`; color choices meet WCAG AA contrast.
+- **Every file carries an SPDX license header.** Start each tracked file with
+  `SPDX-License-Identifier: Apache-2.0` in its comment syntax (an HTML comment in Markdown and SVG, `#`
+  in YAML). The License Headers check (`.github/workflows/800-call-license-headers.yaml`, configured by
+  `.licenserc.yaml`) fails pull requests without one; only files that cannot hold a comment are listed
+  in `.licenserc.yaml`.
 - **Sign every commit, in two ways.** Contributor commits must be (1) GPG-signed — set
   `git config commit.gpgsign true` (and `user.signingkey <KEY-ID>`) so `%G?` shows `G` on
   `git log --show-signature` — and (2) carry a DCO `Signed-off-by:` trailer, which the per-clone

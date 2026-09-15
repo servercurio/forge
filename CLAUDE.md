@@ -1,3 +1,7 @@
+<!--
+  ~ SPDX-License-Identifier: Apache-2.0
+-->
+
 # CLAUDE.md
 
 Guidance for Claude Code working in this repository. This file covers project intent, conventions,

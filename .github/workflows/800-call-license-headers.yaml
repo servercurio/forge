@@ -1,0 +1,57 @@
+# SPDX-License-Identifier: Apache-2.0
+
+name: "800: [CALL] License Headers"
+on:
+  workflow_call:
+    inputs:
+      go-version:
+        description: "Go Version:"
+        type: string
+        required: false
+        default: "1.27.1"
+      license-eye-version:
+        description: "license-eye CLI module version (github.com/apache/skywalking-eyes):"
+        type: string
+        required: false
+        default: "v0.9.0"
+      custom-job-label:
+        description: "Custom Job Label:"
+        type: string
+        required: false
+        default: "License Headers"
+
+defaults:
+  run:
+    shell: bash
+
+permissions:
+  contents: read
+
+jobs:
+  license-headers:
+    name: "${{ inputs.custom-job-label || 'License Headers' }}"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout Code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup GoLang
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version: ${{ inputs.go-version || '1.27.1' }}
+          check-latest: false
+
+      # license-eye is installed with `go install` rather than through the
+      # apache/skywalking-eyes action, whose action.yml references
+      # actions/setup-go by tag, which the transitive-SHA-pinning policy
+      # rejects. Installing the CLI also pins it to an exact module version.
+      - name: Install license-eye
+        run: go install github.com/apache/skywalking-eyes/cmd/license-eye@${{ inputs.license-eye-version || 'v0.9.0' }}
+
+      - name: Check License Headers
+        run: license-eye -c .licenserc.yaml header check

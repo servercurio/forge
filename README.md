@@ -1,3 +1,7 @@
+<!--
+  ~ SPDX-License-Identifier: Apache-2.0
+-->
+
 <p align="center">
   <img src="docs/images/logo.svg" alt="Server Curio — Forge" width="600">
 </p>

@@ -1,0 +1,29 @@
+# SPDX-License-Identifier: Apache-2.0
+
+name: "200: [FLOW] PR Checks"
+on:
+  workflow_dispatch:
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - ready_for_review
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: pr-checks-${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  license-headers:
+    name: "License Headers"
+    uses: ./.github/workflows/800-call-license-headers.yaml
+    with:
+      custom-job-label: Standard

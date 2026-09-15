@@ -1,3 +1,7 @@
+<!--
+  ~ SPDX-License-Identifier: Apache-2.0
+-->
+
 # Required local git hooks
 
 This repository requires a `prepare-commit-msg` git hook that auto-appends a DCO `Signed-off-by:` line to non-merge, non-squash commits. The hook lives at `.git/hooks/prepare-commit-msg` (per-clone, not version-controlled).

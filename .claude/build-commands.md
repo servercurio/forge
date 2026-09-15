@@ -1,3 +1,7 @@
+<!--
+  ~ SPDX-License-Identifier: Apache-2.0
+-->
+
 # Key Build Commands
 
 This repository is intentionally minimal and does **not** yet ship a build runner (no `Taskfile`,
