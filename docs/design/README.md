@@ -19,6 +19,7 @@ alternatives considered, and tracks its status as the decision matures.
 | [0006](0006-forge-identity.md)       | forge-identity       | Draft  | 2026-09-15 |
 | [0007](0007-forge-sso.md)            | forge-sso            | Draft  | 2026-09-15 |
 | [0008](0008-forge-gateway.md)        | forge-gateway        | Draft  | 2026-09-15 |
+| [0009](0009-forge-inventory.md)      | forge-inventory      | Draft  | 2026-09-15 |
 
 ## Statuses
 
