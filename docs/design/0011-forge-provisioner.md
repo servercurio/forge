@@ -124,16 +124,20 @@ chain. It is signed with the provisioner's own service key, whose certificate ca
 `spiffe://<environment-id>/service/forge-provisioner`. The payload holds `environmentId`, `tenantId`,
 `endpointId`, `agentId`, a per-endpoint monotonic `generation`, `issuedAt`, `notAfter` (default 7
 days), `mode`, rendered resources, `host`-phase policies and scripts, and plugin pins (name, version,
-SHA-256) taken only from verified plugin imports (below). 0001 relies on this signature for plugin pins.
+SHA-256, and publisher identity) taken only from verified plugin imports (below). 0001 relies on this
+signature for plugin pins.
 OPA on the host catches a stale or out-of-policy directive,
 and the signature lets the agent reject one forged by a compromised gateway. DSSE needs only
 standard-library ECDSA and an estimated (unmeasured) 50 lines of code, so it adds no module.
 
 #### Plugin release verification
 
-Plugin signatures are verified here, once, instead of on every agent
-([0001](0001-project-repositories.md#agent-plugin-ecosystem)). Agents trust only the SHA-256 pins in
-bundles this service signs ([0012](0012-forge-agent.md#sigstore-verifier-measurements) records why).
+Plugin signatures are verified here at import, and again on each host by the core `sigstore` validator
+plugin before install ([0001](0001-project-repositories.md#agent-plugin-ecosystem)). A host installs a
+non-core plugin only when its digest matches a pin in a bundle this service signs and the validator
+accepts its signature for the pin's publisher identity
+([0012](0012-forge-agent.md#sigstore-verifier-measurements) records why the agent binary links no
+verifier).
 
 - **Import** — creating or updating an `AgentPlugin` ([0014](0014-forge-agent-plugins.md)) downloads
   `plugins-index.json`, the plugin manifest, and each listed asset's `.sigstore.json` bundle, and
@@ -144,6 +148,12 @@ bundles this service signs ([0012](0012-forge-agent.md#sigstore-verifier-measure
 - **Record** — verified digests, signer identity, Rekor log index, and integrated time go into
   `plugin_verifications` and the audit log. Only verified digests can appear as plugin pins in a
   bundle; anything else fails admission with `plugin_not_verified`.
+- **Pins** — each bundle pin carries the plugin name, version, per-platform SHA-256, and the publisher
+  identity verified at import: the keyless issuer, repository, workflow, and refs, or the public key.
+  The host validator checks the same identity before install ([0012](0012-forge-agent.md)).
+- **Core plugins** — `sigstore` and `sysfacts` ship in agent packages and are trusted through the
+  core-plugin key embedded in the agent (0012); a pin for a newer core release also needs its core-signed
+  envelope on the host ([0014](0014-forge-agent-plugins.md)).
 - **Trusted root** — proposed: refresh `trusted_root.json` through Sigstore's TUF repository
   (sigstore-go `pkg/tuf`), with a packaged fallback for air-gapped environments.
 - **Withdrawal** — removing an `AgentPlugin` version or its `PluginPublisher` drops its pins from the
@@ -254,7 +264,9 @@ Alternatives.
 **sigstore-go is heavy — flagged, and confined here.** Its verifier compiles in 71 modules, including
 23 `go-openapi` modules, OpenTelemetry, and gRPC (through Rekor v2 types, without serving or calling any
 gRPC API); [0012](0012-forge-agent.md#sigstore-verifier-measurements) records the measurement and import
-chains. It is accepted in this service so that agents and plugins never link it. The combined set with
+chains. It is accepted in this service and in the core `sigstore` validator plugin
+([0014](0014-forge-agent-plugins.md)), so the agent binary and other plugins never link it. The combined
+set with
 OPA, Tengo, and jsonschema is not measured yet; the module allowlist records it.
 
 ### Data & storage
@@ -292,8 +304,9 @@ Credentials for devices are **never** stored here or in bundles: `credentialRef`
   Tengo sandbox above; fuzzing covers YAML decoding and DSSE parsing.
 - **Signing** — the bundle key is the renewing service key from `pkg/enroll`; it never leaves the
   process. Agents verify the chain and SPIFFE ID ([0012](0012-forge-agent.md)).
-- **Plugin releases** — Sigstore verification runs only at import, in this service. `PluginPublisher`
-  documents are audited like policies, and writing them is a separate permission from `AgentPlugin`.
+- **Plugin releases** — Sigstore verification runs at import in this service, and again on hosts in the
+  core validator against the identity in each pin (0012). `PluginPublisher` documents are audited like
+  policies, and writing them is a separate permission from `AgentPlugin`.
 - **Devices** — TLS verification is mandatory and SSH host keys are pinned in `DeviceConnection`.
   Skipping either is the last-resort feature `insecure-device-transport`.
 
@@ -343,8 +356,9 @@ from [CONVENTIONS.md](CONVENTIONS.md).
 Bootstrap from `go-echo-starter`, replacing its logging with `forge-common` and its route-metadata
 OpenAPI with the embedded contract from 0002. Binary `forge-provisioner`, shipped as the
 [CONVENTIONS.md](CONVENTIONS.md#deployment-artifacts) deployment artifacts: the starter's Dockerfile and
-Helm chart (with the enrollment init container), signed deb and rpm packages, and a Windows MSI. Database migrations are forward-only goose files; bundles are versioned by
-payload type so agents can support the current and previous `apiVersion`.
+Helm chart (with the enrollment init container), signed deb and rpm packages, and a Windows MSI.
+Database migrations are forward-only goose files; bundles are versioned by payload type so agents can
+support the current and previous `apiVersion`.
 
 ### Testing
 
@@ -358,7 +372,7 @@ payload type so agents can support the current and previous `apiVersion`.
 - **Drivers** — `httptest` and an in-process `x/crypto/ssh` server. Contract tests against the OpenAPI
   document, fuzzing, `-race`, and the module allowlist.
 - **Plugin verification** — a wrong identity, wrong digest, missing log entry, or unknown trusted root
-  fails import, and no bundle may carry an unverified pin.
+  fails import, and no bundle may carry an unverified pin or a pin without its publisher identity.
 
 ## Alternatives considered
 
@@ -371,7 +385,8 @@ payload type so agents can support the current and previous `apiVersion`.
   connections through the gateway; pull with long polling fits the agent ingress.
 - **Unsigned bundles relying on mutual TLS** — a compromised gateway could forge directives that OPA
   might still allow.
-- **Sigstore verification on every agent** — see
+- **On-host verification only** — without an import check, an unverifiable release could be pinned and
+  would fail on every host instead of at admission; see
   [0012](0012-forge-agent.md#sigstore-verifier-measurements).
 - **Out-of-process drivers over go-plugin** — isolates faults, but brings gRPC into a service against
   the [API style convention](CONVENTIONS.md#api-contract-and-style).
