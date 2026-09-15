@@ -124,9 +124,30 @@ chain. It is signed with the provisioner's own service key, whose certificate ca
 `spiffe://<environment-id>/service/forge-provisioner`. The payload holds `environmentId`, `tenantId`,
 `endpointId`, `agentId`, a per-endpoint monotonic `generation`, `issuedAt`, `notAfter` (default 7
 days), `mode`, rendered resources, `host`-phase policies and scripts, and plugin pins (name, version,
-SHA-256). Signing is an addition to 0001: OPA on the host catches a stale or out-of-policy directive,
+SHA-256) taken only from verified plugin imports (below). 0001 relies on this signature for plugin pins.
+OPA on the host catches a stale or out-of-policy directive,
 and the signature lets the agent reject one forged by a compromised gateway. DSSE needs only
 standard-library ECDSA and an estimated (unmeasured) 50 lines of code, so it adds no module.
+
+#### Plugin release verification
+
+Plugin signatures are verified here, once, instead of on every agent
+([0001](0001-project-repositories.md#agent-plugin-ecosystem)). Agents trust only the SHA-256 pins in
+bundles this service signs ([0012](0012-forge-agent.md#sigstore-verifier-measurements) records why).
+
+- **Import** — creating or updating an `AgentPlugin` ([0014](0014-forge-agent-plugins.md)) downloads
+  `plugins-index.json`, the plugin manifest, and each listed asset's `.sigstore.json` bundle, and
+  verifies them with [sigstore-go](https://github.com/sigstore/sigstore-go) `pkg/verify` against the
+  referenced `PluginPublisher`: the keyless issuer and structured identity (repository, workflow, and
+  ref) or its public key, a transparency-log entry, and an SCT for keyless certificates. Each asset
+  digest must equal both its index entry and the `AgentPlugin` pin.
+- **Record** — verified digests, signer identity, Rekor log index, and integrated time go into
+  `plugin_verifications` and the audit log. Only verified digests can appear as plugin pins in a
+  bundle; anything else fails admission with `plugin_not_verified`.
+- **Trusted root** — proposed: refresh `trusted_root.json` through Sigstore's TUF repository
+  (sigstore-go `pkg/tuf`), with a packaged fallback for air-gapped environments.
+- **Withdrawal** — removing an `AgentPlugin` version or its `PluginPublisher` drops its pins from the
+  next bundle generation, so agents stop launching it once they accept that generation.
 
 #### Reconciliation loop
 
@@ -216,12 +237,13 @@ type Driver interface {
 - **New, measured** on 2026-09-15 with throwaway `linux/amd64` modules (`CGO_ENABLED=0`, stripped),
   counting modules in `go list -deps`:
 
-| Module                                   | Version        | Linked modules | Binary   | Notes                         |
-|------------------------------------------|----------------|----------------|----------|-------------------------------|
-| `open-policy-agent/opa/v1/rego`          | v1.20.2        | 26             | 22.0 MiB | 127 in `go list -m all`       |
-| `d5/tengo/v2`                            | pseudo-version | 1              | 3.4 MiB  | no requirements               |
-| `santhosh-tekuri/jsonschema/v6`          | v6.0.3         | +1 (`x/text`)  | —        | already chosen in 0002        |
-| All three                                | —              | 29             | 23.5 MiB | no gRPC                       |
+| Module                                | Version        | Linked modules | Binary   | Notes                             |
+|---------------------------------------|----------------|----------------|----------|-----------------------------------|
+| `open-policy-agent/opa/v1/rego`       | v1.20.2        | 26             | 22.0 MiB | 127 in `go list -m all`           |
+| `d5/tengo/v2`                         | pseudo-version | 1              | 3.4 MiB  | no requirements                   |
+| `santhosh-tekuri/jsonschema/v6`       | v6.0.3         | +1 (`x/text`)  | —        | already chosen in 0002            |
+| All three                             | —              | 29             | 23.5 MiB | no gRPC                           |
+| `sigstore/sigstore-go` (`pkg/verify`) | v1.3.0         | 71             | —        | 367 in `go list -m all`; see 0012 |
 
 **OPA is heavy — flagged.** Its 26 modules include `lestrrat-go/jwx/v3` and five more `lestrrat-go`
 modules (for `io.jwt` builtins), `sirupsen/logrus`, `rcrowley/go-metrics`, `vektah/gqlparser/v2` (GraphQL
@@ -229,21 +251,28 @@ builtins), `google.golang.org/protobuf`, and `sigs.k8s.io/yaml`. The `opa_no_oci
 change the count. 0001 settles on the OPA library, so the lighter Wasm route is only listed under
 Alternatives.
 
+**sigstore-go is heavy — flagged, and confined here.** Its verifier compiles in 71 modules, including
+23 `go-openapi` modules, OpenTelemetry, and gRPC (through Rekor v2 types, without serving or calling any
+gRPC API); [0012](0012-forge-agent.md#sigstore-verifier-measurements) records the measurement and import
+chains. It is accepted in this service so that agents and plugins never link it. The combined set with
+OPA, Tengo, and jsonschema is not measured yet; the module allowlist records it.
+
 ### Data & storage
 
 PostgreSQL through the starter's pgx, bun, and goose. Every table has `tenant_id` first in its primary
 key.
 
-| Table                  | Contents                                                                           |
-|------------------------|------------------------------------------------------------------------------------|
-| `documents`            | `id`, `api_version`, `kind`, `name`, `generation`, `spec` (jsonb), `labels`, `sha256` |
-| `document_revisions`   | append-only copies of every accepted generation, with author and request ID        |
-| `endpoint_targets`     | materialized selector matches: endpoint → documents                                |
-| `directive_bundles`    | `endpoint_id`, `generation`, `digest`, `envelope` (bytea), `not_after`; last 10 kept |
-| `reconcile_queue`      | `endpoint_id`, `reason`, `due_at`, `lease_owner`, `lease_expires_at`, `attempts`   |
-| `endpoint_status`      | path, `applied_generation`, drift (`in_sync`, `drifted`, `failed`, `unknown`), conditions |
-| `enforcement_reports`  | monthly partitions, 30-day retention; digests of observed state, never content     |
-| `audit_events`         | append-only: principal, action, document, policy decision                          |
+| Table                  | Contents                                                                                   |
+|------------------------|--------------------------------------------------------------------------------------------|
+| `documents`            | `id`, `api_version`, `kind`, `name`, `generation`, `spec` (jsonb), `labels`, `sha256`      |
+| `document_revisions`   | append-only copies of every accepted generation, with author and request ID                |
+| `endpoint_targets`     | materialized selector matches: endpoint → documents                                        |
+| `directive_bundles`    | `endpoint_id`, `generation`, `digest`, `envelope` (bytea), `not_after`; last 10 kept       |
+| `reconcile_queue`      | `endpoint_id`, `reason`, `due_at`, `lease_owner`, `lease_expires_at`, `attempts`           |
+| `endpoint_status`      | path, `applied_generation`, drift (`in_sync`, `drifted`, `failed`, `unknown`), conditions  |
+| `enforcement_reports`  | monthly partitions, 30-day retention; digests of observed state, never content             |
+| `plugin_verifications` | `agent_plugin_id`, `platform`, `sha256`, signer identity, Rekor log index, integrated time |
+| `audit_events`         | append-only: principal, action, document, policy decision                                  |
 
 Credentials for devices are **never** stored here or in bundles: `credentialRef` names a secret that a
 `SecretProvider` resolves at apply time. The first provider reads files mounted by
@@ -263,6 +292,8 @@ Credentials for devices are **never** stored here or in bundles: `credentialRef`
   Tengo sandbox above; fuzzing covers YAML decoding and DSSE parsing.
 - **Signing** — the bundle key is the renewing service key from `pkg/enroll`; it never leaves the
   process. Agents verify the chain and SPIFFE ID ([0012](0012-forge-agent.md)).
+- **Plugin releases** — Sigstore verification runs only at import, in this service. `PluginPublisher`
+  documents are audited like policies, and writing them is a separate permission from `AgentPlugin`.
 - **Devices** — TLS verification is mandatory and SSH host keys are pinned in `DeviceConnection`.
   Skipping either is the last-resort feature `insecure-device-transport`.
 
@@ -292,24 +323,27 @@ digests. Metrics: `forge.provisioner.reconcile.duration`, `forge.provisioner.que
 Prefix `FORGE_PROVISIONER_`, plus the starter's `server` and `database` blocks and the library blocks
 from [CONVENTIONS.md](CONVENTIONS.md).
 
-| YAML                          | Variable                                          | Default   |
-|-------------------------------|---------------------------------------------------|-----------|
-| `reconcile.workers`           | `FORGE_PROVISIONER_RECONCILE_WORKERS`             | `8`       |
-| `reconcile.resyncInterval`    | `FORGE_PROVISIONER_RECONCILE_RESYNC_INTERVAL`     | `15m`     |
-| `reconcile.leaseDuration`     | `FORGE_PROVISIONER_RECONCILE_LEASE_DURATION`      | `60s`     |
-| `policy.evalTimeout`          | `FORGE_PROVISIONER_POLICY_EVAL_TIMEOUT`           | `500ms`   |
-| `script.maxAllocs`            | `FORGE_PROVISIONER_SCRIPT_MAX_ALLOCS`             | `100000`  |
-| `script.timeout`              | `FORGE_PROVISIONER_SCRIPT_TIMEOUT`                | `2s`      |
-| `bundle.validity`             | `FORGE_PROVISIONER_BUNDLE_VALIDITY`               | `168h`    |
-| `bundle.maxWait`              | `FORGE_PROVISIONER_BUNDLE_MAX_WAIT`               | `60s`     |
-| `inventory.url`               | `FORGE_PROVISIONER_INVENTORY_URL`                 | required  |
-| `secrets.directory`           | `FORGE_PROVISIONER_SECRETS_DIRECTORY`             | required if devices are used |
+| YAML                         | Variable                                         | Default                      |
+|------------------------------|--------------------------------------------------|------------------------------|
+| `reconcile.workers`          | `FORGE_PROVISIONER_RECONCILE_WORKERS`            | `8`                          |
+| `reconcile.resyncInterval`   | `FORGE_PROVISIONER_RECONCILE_RESYNC_INTERVAL`    | `15m`                        |
+| `reconcile.leaseDuration`    | `FORGE_PROVISIONER_RECONCILE_LEASE_DURATION`     | `60s`                        |
+| `policy.evalTimeout`         | `FORGE_PROVISIONER_POLICY_EVAL_TIMEOUT`          | `500ms`                      |
+| `script.maxAllocs`           | `FORGE_PROVISIONER_SCRIPT_MAX_ALLOCS`            | `100000`                     |
+| `script.timeout`             | `FORGE_PROVISIONER_SCRIPT_TIMEOUT`               | `2s`                         |
+| `bundle.validity`            | `FORGE_PROVISIONER_BUNDLE_VALIDITY`              | `168h`                       |
+| `bundle.maxWait`             | `FORGE_PROVISIONER_BUNDLE_MAX_WAIT`              | `60s`                        |
+| `inventory.url`              | `FORGE_PROVISIONER_INVENTORY_URL`                | required                     |
+| `secrets.directory`          | `FORGE_PROVISIONER_SECRETS_DIRECTORY`            | required if devices are used |
+| `plugins.trustedRootFile`    | `FORGE_PROVISIONER_PLUGINS_TRUSTED_ROOT_FILE`    | packaged fallback            |
+| `plugins.tufRefreshInterval` | `FORGE_PROVISIONER_PLUGINS_TUF_REFRESH_INTERVAL` | `24h`                        |
 
 ### Build, release & versioning
 
 Bootstrap from `go-echo-starter`, replacing its logging with `forge-common` and its route-metadata
-OpenAPI with the embedded contract from 0002. Binary `forge-provisioner`; the starter's Dockerfile and
-Helm chart carry over. Database migrations are forward-only goose files; bundles are versioned by
+OpenAPI with the embedded contract from 0002. Binary `forge-provisioner`, shipped as the
+[CONVENTIONS.md](CONVENTIONS.md#deployment-artifacts) deployment artifacts: the starter's Dockerfile and
+Helm chart (with the enrollment init container), signed deb and rpm packages, and a Windows MSI. Database migrations are forward-only goose files; bundles are versioned by
 payload type so agents can support the current and previous `apiVersion`.
 
 ### Testing
@@ -323,6 +357,8 @@ payload type so agents can support the current and previous `apiVersion`.
   and selector changes.
 - **Drivers** — `httptest` and an in-process `x/crypto/ssh` server. Contract tests against the OpenAPI
   document, fuzzing, `-race`, and the module allowlist.
+- **Plugin verification** — a wrong identity, wrong digest, missing log entry, or unknown trusted root
+  fails import, and no bundle may carry an unverified pin.
 
 ## Alternatives considered
 
@@ -335,6 +371,8 @@ payload type so agents can support the current and previous `apiVersion`.
   connections through the gateway; pull with long polling fits the agent ingress.
 - **Unsigned bundles relying on mutual TLS** — a compromised gateway could forge directives that OPA
   might still allow.
+- **Sigstore verification on every agent** — see
+  [0012](0012-forge-agent.md#sigstore-verifier-measurements).
 - **Out-of-process drivers over go-plugin** — isolates faults, but brings gRPC into a service against
   the [API style convention](CONVENTIONS.md#api-contract-and-style).
 - **A job queue library such as River** — more features, but a dependency for what `SKIP LOCKED` does.
@@ -351,6 +389,8 @@ payload type so agents can support the current and previous `apiVersion`.
 - **Bundle validity** — is 7 days right for offline agents, and should it be per tenant?
 - **Tengo maintenance** — pin upstream pseudo-versions, or fork under `servercurio`?
 - **Approvals** — do `production` changes need a second approver before dispatch?
+- **Air-gapped trusted root** — who approves updates to the packaged `trusted_root.json` fallback, and
+  how often?
 
 ## References
 
@@ -367,6 +407,9 @@ payload type so agents can support the current and previous `apiVersion`.
 - [`go.yaml.in/yaml/v3`](https://pkg.go.dev/go.yaml.in/yaml/v3) — `Node` and `AliasNode`.
 - [DSSE envelope](https://github.com/secure-systems-lab/dsse/blob/master/envelope.md) and
   [protocol](https://github.com/secure-systems-lab/dsse/blob/master/protocol.md).
+- [sigstore-go](https://github.com/sigstore/sigstore-go) —
+  [`verify`](https://pkg.go.dev/github.com/sigstore/sigstore-go/pkg/verify) and
+  [`tuf`](https://pkg.go.dev/github.com/sigstore/sigstore-go/pkg/tuf) packages; measured in 0012.
 - [PostgreSQL `FOR UPDATE SKIP LOCKED`](https://www.postgresql.org/docs/current/sql-select.html#SQL-FOR-UPDATE-SHARE)
   and [row security policies](https://www.postgresql.org/docs/current/ddl-rowsecurity.html).
 - [RFC 9110](https://www.rfc-editor.org/rfc/rfc9110) — conditional requests;
