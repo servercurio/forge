@@ -6,8 +6,9 @@
 - **Summary:** `forge-agent-plugin-sdk` defines the versioned gRPC contract between `forge-agent` and
   its plugins over `hashicorp/go-plugin`. The agent gets launch helpers that pin each binary's SHA-256,
   use automatic mutual TLS, and start plugins with a clean environment. Plugins get a `serve` package
-  that enforces the environment check and capability grants, plus a test harness. The only third-party
-  code is the go-plugin and gRPC stack, measured at 14 linked modules.
+  that enforces the environment check and capability grants, plus a test harness. The contract includes
+  a `VerifierService` that only a core-signed plugin may provide. The only third-party code is the
+  go-plugin and gRPC stack, measured at 14 linked modules.
 
 > An initial draft with concrete proposals, bounded by the
 > [Resolved decisions](0001-project-repositories.md#resolved-decisions) in 0001. Conventions other
@@ -16,10 +17,11 @@
 ## Context & goals
 
 In 0001, plugins are separate processes that `forge-agent` launches over gRPC with
-`hashicorp/go-plugin`. `forge-provisioner` verifies plugin release signatures at import, and before
-every launch the agent pins the binary's SHA-256, taken from its signed directive bundle, through
-`SecureConfig`. The agent passes its environment ID, and a plugin refuses an agent from
-another environment
+`hashicorp/go-plugin`. `forge-provisioner` verifies plugin release signatures at import, the core
+`sigstore` validator plugin verifies them again on the host before install, and before every launch the
+agent pins the binary's SHA-256, taken from its signed directive bundle or a core plugin's signed
+statement, through `SecureConfig`. The agent passes its environment ID, and a plugin refuses an agent
+from another environment
 ([Agent plugin ecosystem](0001-project-repositories.md#agent-plugin-ecosystem),
 [Environment identity](0001-project-repositories.md#environment-identity)). This repository is "the
 stable contract plugins build against", and [CONVENTIONS.md](CONVENTIONS.md) makes it the only home of
@@ -31,11 +33,14 @@ Forge's gRPC contract.
 - One implementation of the go-plugin setup: hash pinning, mutual TLS, a clean environment, and
   protocol negotiation.
 - The environment check and capability gates enforced once, for every plugin.
+- A verifier contract and network grants that keep Sigstore verification out of the agent binary and
+  the executor off the network.
 - A small footprint and a harness authors can run without a real agent.
 
 **Non-goals**
 
-- Signature verification, installation, OS sandboxing, and restarts — [0012](0012-forge-agent.md).
+- Signature and core-signature verification policy, installation, OS sandboxing, and restarts —
+  [0012](0012-forge-agent.md); the validator implementation — [0014](0014-forge-agent-plugins.md).
 - Desired-state kind schemas — [0002](0002-forge-api-schema.md).
 - First-party plugins ([0014](0014-forge-agent-plugins.md)) and the author template
   ([0015](0015-forge-plugin-starter.md)).
@@ -47,7 +52,8 @@ Forge's gRPC contract.
 ### Responsibilities
 
 - **Contract** — protobuf definitions, generated Go code, handshake values, and protocol versions.
-- **Manifest** — plugin names, capabilities, and declared privileges, with validation.
+- **Manifest** — plugin names, capabilities, the `core` flag, and declared privileges and network
+  grants, with validation.
 - **Host and plugin sides** — `host` launches and calls plugins; `serve` is the plugin boilerplate
   with its interceptors.
 - **Trace context and testing** — W3C propagation, the harnesses, and a conformance suite.
@@ -58,12 +64,12 @@ Forge's gRPC contract.
 
 ```
 forge-agent-plugin-sdk/
-├── proto/forge/agent/plugin/v1alpha1/   # plugin.proto, facts.proto, resource.proto
+├── proto/forge/agent/plugin/v1alpha1/   # plugin.proto, facts.proto, resource.proto, verifier.proto
 ├── buf.yaml, buf.gen.yaml
 ├── pkg/
 │   ├── plugin/v1alpha1/                 # package pluginv1alpha1 (generated, committed)
 │   ├── handshake/                       # Config, SupportedProtocols
-│   ├── manifest/                        # Manifest, Capability, Privileges, ValidateName
+│   ├── manifest/                        # Manifest, Capability, Privileges, NetworkGrant, ValidateName
 │   ├── serve/                           # Main, Options, FactsCollector, ResourceHandler, Granted
 │   ├── host/                            # Launch, Config, Plugin, ErrEnvironmentMismatch
 │   ├── tracecontext/                    # Carrier, UnaryClient, UnaryServer
@@ -94,7 +100,7 @@ service ResourceService {
 }
 message Environment { string name = 1; string tier = 2; string id = 3; }
 message InitRequest { Environment environment = 1; string agent_id = 2; Grant grant = 3; }
-message Grant { repeated string capabilities = 1; Privileges privileges = 2; }
+message Grant { repeated string capabilities = 1; Privileges privileges = 2; string mode = 3; }
 message Resource { string api_version = 1; string kind = 2; string name = 3; bytes spec_json = 4; }
 message Fact { string name = 1; bytes value_json = 2; } // name: <plugin>.<snake_case>
 ```
@@ -106,6 +112,48 @@ message Fact { string name = 1; bytes value_json = 2; } // name: <plugin>.<snake
   code, as in CONVENTIONS' problem `code`, and `domain` is the plugin name. `errdetails` comes from
   `genproto/googleapis/rpc`, which gRPC already links.
 - **Size** — gRPC's default 4 MiB receive limit. The agent passes content inline; plugins fetch nothing.
+  The one exception is the validator's `RefreshTrust`, under its network grant.
+
+#### Verifier service
+
+Proposed in `verifier.proto`, served only by the core `sigstore` plugin
+([0014](0014-forge-agent-plugins.md)) under the `verifier:sigstore` capability:
+
+```proto
+service VerifierService {
+  rpc RefreshTrust(RefreshTrustRequest) returns (RefreshTrustResponse);       // mode "refresh" only
+  rpc VerifyArtifact(VerifyArtifactRequest) returns (VerifyArtifactResponse); // "verify" mode, offline
+}
+message TrustMetadata { map<string, bytes> files = 1; }  // TUF metadata files by name
+message TrustVersions { uint64 root = 1; uint64 timestamp = 2; uint64 snapshot = 3; uint64 targets = 4; }
+message RefreshTrustRequest { TrustVersions accepted = 1; }
+message RefreshTrustResponse { TrustMetadata metadata = 1; }
+message PublisherIdentity {
+  string issuer = 1; string repository = 2; string workflow = 3; repeated string refs = 4;
+  bytes public_key_pem = 5; // set instead of the keyless fields for key-based publishers
+}
+message VerifyArtifactRequest {
+  string sha256 = 1;        // digest the agent computed; binaries stay out of the 4 MiB message
+  bytes bundle_json = 2;    // the asset's .sigstore.json
+  PublisherIdentity publisher = 3;
+  TrustMetadata trust = 4;
+  TrustVersions accepted = 5; // rollback floor from the agent's state
+}
+message VerifyArtifactResponse {
+  string verified_identity = 1; int64 log_index = 2; google.protobuf.Timestamp integrated_time = 3;
+  TrustVersions accepted = 4;
+}
+```
+
+- **Refresh** — fetches TUF metadata newer than `accepted` from the granted repository and returns it
+  unverified; the caller stores it as untrusted input (0012).
+- **Verify** — re-verifies `trust` from the root embedded in the validator, per the
+  [TUF specification](https://theupdateframework.github.io/specification/latest/) (expiry, versions not
+  below `accepted`), then verifies `bundle_json` for `sha256` against `publisher`: certificate identity,
+  transparency-log entry, and an SCT for keyless certificates. Any failure is `PERMISSION_DENIED` with a
+  reason such as `identity_mismatch`, `tlog_entry_missing`, or `trust_metadata_expired`.
+- **Wrong mode** — `serve` rejects `RefreshTrust` in `verify` mode and `VerifyArtifact` in `refresh`
+  mode with `PERMISSION_DENIED` (`mode_not_granted`).
 
 #### Handshake and protocol versions
 
@@ -131,28 +179,59 @@ Each plugin embeds a `manifest.yaml`. `GetManifest` returns it, and each release
 ```yaml
 name: packages                  # lowercase DNS label; binary forge-plugin-packages
 version: 0.4.0
+core: false                     # true is honored only with a verified core signature (0012)
 protocolVersions: [1]
 capabilities: [resource:forge.servercurio.com/v1alpha1/Package]
 privileges:
   runAsRoot: true
   execPaths: [/usr/bin/apt-get, /usr/bin/dpkg-query, /usr/bin/dnf, /usr/bin/rpm]
-  network: true                 # package managers download from mirrors
+  network:                      # package managers download from mirrors; operators narrow hosts
+    - { host: "*", port: 80 }
+    - { host: "*", port: 443 }
 platforms: [linux/amd64, linux/arm64]
 ```
 
-| Capability                          | Service           | Meaning                            |
-|-------------------------------------|-------------------|------------------------------------|
-| `facts`                             | `FactsService`    | read-only inventory facts          |
-| `resource:<group>/<version>/<Kind>` | `ResourceService` | validate, plan, and apply one kind |
+| Capability                          | Service           | Meaning                                                |
+|-------------------------------------|-------------------|--------------------------------------------------------|
+| `facts`                             | `FactsService`    | read-only inventory facts                              |
+| `resource:<group>/<version>/<Kind>` | `ResourceService` | validate, plan, and apply one kind                     |
+| `verifier:sigstore`                 | `VerifierService` | Sigstore verification for install decisions; core only |
 
 1. **Declare** — after verifying and launching the plugin (0012), the agent reads its manifest. The
    manifest is trusted only as far as the verified publisher.
 2. **Grant** — the grant is the intersection of the manifest and the operator's policy for the
    plugin, never more than the manifest declares.
-3. **Gate** — `Init` carries the grant. `serve` rejects RPCs outside it with `PERMISSION_DENIED`
+3. **Core** — `core: true` and `verifier:*` capabilities are honored only for a binary whose core
+   statement the agent verified (0012). `host` sets `Config.Core` only on that path; a manifest that
+   claims `core` without it is refused (`core_signature_required`), and a non-core plugin is never
+   granted a `verifier:*` capability.
+4. **Gate** — `Init` carries the grant. `serve` rejects RPCs outside it with `PERMISSION_DENIED`
    (`capability_not_granted`), and `serve.Granted(ctx)` exposes the privilege grant to handlers.
-4. **Enforce** — in-plugin checks are defense in depth. The boundary is the OS sandbox the agent builds
+5. **Enforce** — in-plugin checks are defense in depth. The boundary is the OS sandbox the agent builds
    from the grant (dedicated user, no network, path limits) through go-plugin's `RunnerFunc` (0012).
+
+#### Network grants
+
+`privileges.network` is a list of `{host, port}` destinations, with optional `mode`; absent or empty
+means no network. The validator's manifest:
+
+```yaml
+name: sigstore
+core: true
+capabilities: [verifier:sigstore]
+privileges:
+  runAsRoot: false
+  network:
+    - { host: tuf-repo-cdn.sigstore.dev, port: 443, mode: refresh }
+```
+
+- **Defaults** — no plugin receives a network grant by default except the core validator in `refresh`
+  mode, where the agent may substitute a configured TUF mirror for the declared host (0012). Other
+  grants need operator policy.
+- **Modes** — the grant's `mode` selects entries: the validator runs as `refresh` (from `serve`) or
+  `verify` (from the executor, never with network).
+- **Enforcement** — `serve.Granted(ctx)` exposes the allowlist so plugin HTTP clients refuse other
+  destinations; the OS boundary is the agent's (0012).
 
 #### Environment check
 
@@ -189,8 +268,8 @@ func main() {
 
 `serve.Main` checks for the magic cookie and a handler for every declared capability, and keeps the
 original stderr for logging. It installs interceptors for panic recovery (`INTERNAL`, `plugin_panic`,
-no stack in the reply), the `Init` and capability gates, trace extraction, and message size, then calls
-`plugin.Serve` with gRPC only.
+no stack in the reply), the `Init`, capability, and mode gates, trace extraction, and message size, then
+calls `plugin.Serve` with gRPC only. `Options.Verifier` registers `VerifierService`.
 
 #### Host side (`host`)
 
@@ -209,6 +288,9 @@ m, err := p.Manifest(ctx)
 err = p.Init(ctx, host.InitRequest{Environment: env, AgentID: agentID, Grant: policy.Grant(m)})
 plan, err := p.Resources().PlanResource(ctx, &pluginv1alpha1.PlanResourceRequest{Resource: r})
 ```
+
+`p.Verifier()` returns a `VerifierService` client only when `Config.Core` is true and the manifest
+declares `core: true` and `verifier:sigstore`; otherwise it returns `ErrNotCoreVerifier`.
 
 | go-plugin setting  | `host.Launch` value               | Reason                                         |
 |--------------------|-----------------------------------|------------------------------------------------|
@@ -243,10 +325,12 @@ span per plugin RPC. The plugin extracts the remote context, so `forge-common`'s
   A stripped linux/amd64 plugin binary was 12.6 MB.
 - **gRPC floor** — go-plugin v1.8.0 requires gRPC v1.61.0 and protobuf v1.36.6. The SDK requires
   current versions, so minimal version selection gives every plugin current security fixes.
-- **Not used** — `sigstore-go` v1.3.0: its verifier links 71 modules, including gRPC, OpenTelemetry,
-  and `go-openapi`, and `go list -m all` reports 367
-  ([0012](0012-forge-agent.md#sigstore-verifier-measurements)). Verification runs in
-  `forge-provisioner` ([0011](0011-forge-provisioner.md)), not in plugins or the agent.
+- **Not in the SDK** — `sigstore-go` v1.3.0: its verifier links 71 modules, including gRPC,
+  OpenTelemetry, and `go-openapi`, and `go list -m all` reports 367
+  ([0012](0012-forge-agent.md#sigstore-verifier-measurements)). The SDK defines `VerifierService` but
+  links no verifier; verification runs in `forge-provisioner` ([0011](0011-forge-provisioner.md)) and in
+  the core `sigstore` plugin (79 linked modules, [0014](0014-forge-agent-plugins.md)), not in the agent
+  binary. `google.protobuf.Timestamp` comes from `protobuf`, already linked.
 - **Tools** (not in `go.mod`) — buf v1.73.0, `protoc-gen-go` v1.36.12, and `protoc-gen-go-grpc` v1.6.2.
   All three were verified to run through `go run <module>@<version>`. `task tools` installs them into
   `.tools/bin` for `buf.gen.yaml`'s `local:` plugins.
@@ -259,18 +343,24 @@ None; only in-memory grant and environment state per plugin process.
 
 ### Security
 
-- **Launch chain** — publisher signature verification at import (0011), a provisioner-signed pin and a
-  digest-checked install (0012), then the SHA-256 in `SecureConfig` on
-  every launch, mutual TLS on the socket, the environment check, and capability gates.
+- **Launch chain** — for core plugins, a core statement verified against the agent's embedded keys
+  (0012); for other plugins, publisher signature verification at import (0011), a provisioner-signed
+  pin, on-host verification by the core validator, and a digest-checked install (0012). Then, for both,
+  the SHA-256 in `SecureConfig` on every launch, mutual TLS on the socket, the environment check, and
+  capability gates.
+- **Verifier trust** — the agent uses `VerifierService` only from a core-signed plugin; `core: true`
+  and `verifier:*` in any other manifest are refused, so a non-core plugin can never provide the
+  verifier behind install decisions.
 - **`SecureConfig` gap** — go-plugin hashes `Path`, then executes `Path`, so a writer could swap the
   file in between. 0012's root-owned, content-addressed install directories and the writable-path
   refusal close that window in practice.
 - **Clean environment** — plugins never receive the agent's variables, certificate, key, or token, and
   have no path to `forge-gateway`.
-- **Untrusted replies** — the agent validates and size-caps facts and never shows plugin error details
-  to operators verbatim.
-- **Least privilege** — manifests default to no root, exec, writes, or network. Fuzzing covers manifest,
-  capability, and fact-name parsing.
+- **Untrusted replies** — the agent validates and size-caps facts and verifier replies, and never shows
+  plugin error details to operators verbatim.
+- **Least privilege** — manifests default to no root, exec, writes, or network. Network grants are host
+  and port allowlists, granted by default only to the core validator's `refresh` mode. Fuzzing covers
+  manifest, capability, network grant, and fact-name parsing.
 
 ### Environment awareness
 
@@ -319,10 +409,11 @@ config mounts under the child keys `environment` and `rpc`:
 - **`plugintest.Launch`** — a fake agent: it pins the binary's hash, enables mutual TLS and a clean
   environment, sends a `development` environment, and forwards stderr to `t.Log`.
 - **`plugintest.Conformance`** — a valid manifest with handlers; refusal before `Init`, on environment
-  mismatch (with exit), and for ungranted capabilities; panics as `INTERNAL`; JSON log lines; and no
-  changes from `Plan` after `Apply` for author-supplied samples.
+  mismatch (with exit), for ungranted capabilities, and for RPCs outside the granted mode; panics as
+  `INTERNAL`; JSON log lines; and no changes from `Plan` after `Apply` for author-supplied samples.
 - **SDK tests** — negotiation (host `{1,2}` against plugin `{1}`), a checksum mismatch, the
-  writable-path refusal, fuzzers, `-race`, and the allowlist.
+  writable-path refusal, `core: true` or `verifier:sigstore` without `Config.Core` refused, network grant
+  validation, fuzzers, `-race`, and the allowlist.
 
 ## Alternatives considered
 
@@ -336,7 +427,11 @@ config mounts under the child keys `environment` and `rpc`:
   is stronger, but the parent process already controls the binary and its environment, so the main
   risk is misconfiguration, which an ID comparison catches. Revisit if plugins hold environment secrets.
 - **Signature verification in `host`** — `sigstore-go` would add 71 linked modules for every plugin
-  author and the agent; `forge-provisioner` verifies at import instead.
+  author and the agent; verification runs at import (0011) and in the core validator's own process
+  instead.
+- **Streaming artifact bytes to `VerifyArtifact`** — lets the validator hash independently, but binaries
+  exceed the 4 MiB message limit; the executor that computes the digest is already trusted.
+- **A boolean `network` privilege** — cannot express the validator's single-destination grant.
 - **Logs over a `GRPCBroker` callback** — structured, but crash output is lost and a second connection
   is needed.
 - **`otelgrpc` interceptors** — would import OpenTelemetry into the SDK.
@@ -361,11 +456,14 @@ config mounts under the child keys `environment` and `rpc`:
 - **Scope** — `GRPCBroker` host callbacks (secrets, content), and host-attached device drivers?
 - **Hardening** — execute from a verified file descriptor to close the `SecureConfig` gap? Windows ACL
   checks?
+- **Network grant syntax** — are `"*"` hosts acceptable for package mirrors, and are CIDR ranges or URL
+  path prefixes needed? OS-level enforcement is open in 0012.
 
 ## References
 
 - [0001](0001-project-repositories.md), [CONVENTIONS.md](CONVENTIONS.md),
-  [0002](0002-forge-api-schema.md), [0003](0003-forge-sdk.md), [0004](0004-forge-common.md).
+  [0002](0002-forge-api-schema.md), [0003](0003-forge-sdk.md), [0004](0004-forge-common.md),
+  [0012](0012-forge-agent.md), [0014](0014-forge-agent-plugins.md).
 - [`hashicorp/go-plugin` v1.8.0](https://github.com/hashicorp/go-plugin/tree/v1.8.0) (MPL-2.0):
   - `client.go` — `SecureConfig`, `SkipHostEnv`, `AutoMTLS`, `RunnerFunc`, `logStderr`, 64 KiB buffer;
   - `server.go` — cookie comment, `PLUGIN_PROTOCOL_VERSIONS`, stdio redirection, Windows TCP listener;
@@ -377,6 +475,10 @@ config mounts under the child keys `environment` and `rpc`:
   [breaking rules](https://buf.build/docs/breaking/rules/) — `FILE`, `PACKAGE`, `WIRE_JSON`, `WIRE`.
 - [protobuf-go](https://github.com/protocolbuffers/protobuf-go);
   [`protoc-gen-go-grpc`](https://pkg.go.dev/google.golang.org/grpc/cmd/protoc-gen-go-grpc).
-- [sigstore-go](https://github.com/sigstore/sigstore-go) — measured verifier footprint.
+- [sigstore-go](https://github.com/sigstore/sigstore-go) — measured verifier footprint;
+  [`tuf`](https://pkg.go.dev/github.com/sigstore/sigstore-go/pkg/tuf) — default TUF repository
+  `https://tuf-repo-cdn.sigstore.dev`.
+- [The Update Framework specification](https://theupdateframework.github.io/specification/latest/) —
+  client workflow, rollback and freeze attack checks.
 - [MPL 2.0 FAQ](https://www.mozilla.org/en-US/MPL/2.0/FAQ/);
   [W3C Trace Context](https://www.w3.org/TR/trace-context/).
