@@ -1,0 +1,320 @@
+<!--
+  ~ SPDX-License-Identifier: Apache-2.0
+-->
+
+# 0003 — forge-sdk
+
+- **Status:** Draft
+- **Owner:** Nathan Klick
+- **Date:** 2026-09-15
+- **Summary:** `forge-sdk` is a single Go module with a client generated from `forge-api-schema` for every
+  Forge API, plus the shared environment-identity code every component needs: SPIFFE ID checks,
+  mutual-TLS configuration, revocation checks, and certificate enrollment and renewal. It depends only on
+  `forge-api-schema` and `golang.org/x/crypto`, and gets logging and tracing from the caller rather than
+  depending on `forge-common`.
+
+> An initial draft with concrete proposals, bounded by the
+> [Resolved decisions](0001-project-repositories.md#resolved-decisions) in 0001. Conventions other
+> repositories depend on are summarized in [CONVENTIONS.md](CONVENTIONS.md).
+
+## Context & goals
+
+0001 defines `forge-sdk` as the generated Go client for the public API, used by `forge-cli`,
+`forge-agent`, and third parties ([Repository inventory](0001-project-repositories.md#repository-inventory)),
+published as one module with one version (Resolved: *SDK modularity*). All SDK traffic enters through
+`forge-gateway` ([Architecture at a glance](0001-project-repositories.md#architecture-at-a-glance)).
+Clients must verify the environment before sending credentials, agents and services enroll with a CSR,
+and certificates renew at two-thirds of their lifetime with OCSP and CRL checks
+([Agent enrollment](0001-project-repositories.md#agent-enrollment),
+[Environment identity](0001-project-repositories.md#environment-identity)).
+
+**Goals**
+
+- An idiomatic Go client for every operation in `forge-api-schema`, regenerated on each schema release.
+- One implementation of SPIFFE ID validation, Forge mutual TLS, revocation checks, enrollment, and
+  renewal, reused by the CLI, agent, gateway, and every service.
+- A small dependency footprint that third-party users can accept.
+- Safe defaults: environment pinning is required, secrets are redacted, and redirects are never followed.
+
+**Non-goals**
+
+- Server-side request handling, routing, and authorization — services and [0008](0008-forge-gateway.md).
+- TPM and OS keystore integrations — the SDK defines the interface, [0012](0012-forge-agent.md)
+  implements them.
+- Interactive login flows and CLI profile files — [0007](0007-forge-sso.md) and
+  [0010](0010-forge-cli.md).
+- Token formats, CA operation, and issuance policy — [0006](0006-forge-identity.md).
+
+## Proposal
+
+### Responsibilities
+
+- **API clients** — generated per service and API version from `forge-api-schema`.
+- **Transport** — authentication, retries, `X-Request-Id`, `User-Agent`, and hooks for callers'
+  telemetry.
+- **Environment identity** — SPIFFE ID parsing and matching, mutual-TLS `tls.Config` builders, and OCSP
+  and CRL revocation checks.
+- **Enrollment and renewal** — enrollment token parsing, service account token credentials for
+  services on Kubernetes, first-contact verification, CSR submission, and renewal at two-thirds of the
+  lifetime.
+- **Errors and pagination** — problem-details errors and pagination iterators.
+
+### Interfaces
+
+#### Package layout
+
+```
+forge-sdk/
+├── pkg/
+│   ├── client/                  # Client, Option, Config; shared *http.Client and transport chain
+│   ├── inventory/v1alpha1/      # package inventoryv1alpha1: generated operations on *client.Client
+│   ├── identity/v1alpha1/       # package identityv1alpha1
+│   ├── provisioner/v1alpha1/    # package provisionerv1alpha1
+│   ├── auth/                    # TokenSource, StaticToken, FileToken
+│   ├── problem/                 # *problem.Error (RFC 9457), Code(err), Status(err)
+│   ├── pagination/              # All[T](...) iter.Seq2[T, error]
+│   ├── spiffe/                  # ID, Parse, Matcher (Service, Agent, ControlNode), FromCertificate
+│   ├── tlsconfig/               # Client(opts), Server(opts), CertificateSource
+│   ├── revocation/              # Checker: OCSP, then CRL, cached until nextUpdate, fails closed
+│   ├── enroll/                  # ParseToken, Credential, Enroll, KeyStore, FileKeyStore, Renewer
+│   └── sdktest/                 # test CA, SPIFFE certificates, fake OCSP responder for consumers' tests
+├── codegen/                     # oapi-codegen configs and Forge client templates
+├── internal/params/             # parameter serialization used by generated code
+├── conformance/                 # nested module: checks generated requests against the documents
+└── examples/                    # nested module: examples wired to forge-common
+```
+
+Service packages take a `*client.Client`, so the root package does not import every API:
+
+```go
+c, err := client.New(
+    client.WithBaseURL("https://gateway.qa-east.example.net"),
+    client.WithEnvironment(envID, rootsPEM),                 // required: pins the trust domain and roots
+    client.WithTokenSource(auth.FileToken("/run/secrets/forge-token")),
+    client.WithTransportWrapper(telemetry.WrapTransport),    // e.g. from forge-common; optional
+)
+if err != nil { return err }
+inv := inventoryv1alpha1.New(c)
+for ep, err := range inv.ListEndpointsAll(ctx, inventoryv1alpha1.ListEndpointsParams{}) {
+    if err != nil { return err }                             // *problem.Error for API errors
+    fmt.Println(ep.Name)
+}
+```
+
+The example is illustrative; names are proposals.
+
+#### Client generation
+
+Proposed: generate operations with oapi-codegen v2.8.0 `client: true`, importing models from
+`forge-api-schema`, with **Forge-maintained `user-templates`** (an oapi-codegen output option). The
+templates replace calls into `github.com/oapi-codegen/runtime` with the SDK's `internal/params`, and emit
+`...All` iterator methods for list operations. `internal/params` supports only the parameter styles the
+Forge ruleset allows: `simple` path parameters and `form` query parameters, as primitives or arrays of
+primitives.
+
+Rationale, measured on 2026-09-15 in a throwaway module: a stock generated client links three modules
+(`oapi-codegen/runtime`, `apapsch/go-jsonmerge/v2`, `google/uuid`). Because runtime's `go.mod` requires
+gin, iris, and Echo v4, `go list -m all` then reports **79** modules. With the templates, generated code
+imports only the standard library, `forge-api-schema`, and the SDK itself. The cost is keeping the
+templates in step with the pinned generator version, which the drift check catches.
+
+#### Transport behavior
+
+- **Base transport** — an `http.Transport` using `tlsconfig.Client`. `WithTransportWrapper` wraps it
+  without replacing the pinned TLS settings.
+- **Redirects** are never followed (`CheckRedirect` returns `http.ErrUseLastResponse`), so credentials
+  cannot be sent to another host.
+- **Retries** — at most 3 attempts by default, only for GET, HEAD, PUT, DELETE, and operations with
+  `x-forge-idempotent`. Retries follow 429, 502, 503, and 504 responses and connection errors, using
+  exponential backoff with jitter and honoring `Retry-After`. The caller's context bounds all attempts.
+- **Headers** — every request carries a fresh `X-Request-Id` and `User-Agent: forge-sdk/<version>`;
+  callers may append a product token.
+- **Errors** — non-2xx responses decode into `*problem.Error` (`Status`, `Code`, `Title`, `Detail`,
+  `TraceID`, `Errors`), usable with `errors.As`. A response that is not a problem document still yields a
+  `*problem.Error` carrying only the status.
+- **Pagination** — `pagination.All` follows `nextCursor` and yields items through the standard
+  [`iter`](https://pkg.go.dev/iter) package.
+
+#### Environment identity packages
+
+- **`spiffe`** — `Parse` enforces the
+  [SPIFFE ID](https://github.com/spiffe/spiffe/blob/main/standards/SPIFFE-ID.md) rules: lowercase trust
+  domain, allowed characters, no percent-encoding. `FromCertificate` requires exactly one `spiffe` URI
+  SAN in [`x509.Certificate.URIs`](https://pkg.go.dev/crypto/x509#Certificate). Matchers cover the three
+  path types: `/service/<repository>`, `/agent/<agent-id>`, and `/control-node/<node-name>`.
+- **`tlsconfig`** — `Client` and `Server` build TLS 1.3-only configurations for Forge-to-Forge links.
+  They verify the chain against the environment's roots (several during root rotation, per 0001), the
+  trust domain against the pinned environment ID, the path through a `spiffe.Matcher`, and revocation
+  through `revocation.Checker`. Certificates come from a `CertificateSource` with `GetCertificate` and
+  `GetClientCertificate`, so renewals apply without restarts. There is no insecure-skip option; tests use
+  `sdktest`.
+- **`revocation`** — `Checker` implements 0001's rules. It asks the certificate's OCSP responder through
+  [`golang.org/x/crypto/ocsp`](https://pkg.go.dev/golang.org/x/crypto/ocsp) and caches the answer until
+  `nextUpdate`. When the responder is unreachable it falls back to the latest CRL, parsed with
+  `x509.ParseRevocationList`, and rejects the peer when neither is available within the cache window.
+  `forge-gateway` uses it for agents, and every service uses it for peer services.
+- **`enroll`** — the CSR flow from 0001, shared by agents and services. A `Credential` names the
+  first-enrollment secret: `TokenFile(path)` for a single-use enrollment token (agents, and services
+  on container and OS targets), or `ServiceAccountTokenFile(path)` for a projected Kubernetes service
+  account token (services only, [0005](0005-forge-infrastructure.md)). Both read the file when used,
+  never cache or log its contents, and print `[redacted]`.
+  1. `ParseToken` extracts the environment ID and CA certificate hash without contacting the server. The
+     wire format comes from [0006](0006-forge-identity.md). A service account token carries neither, so
+     the caller supplies the environment ID and roots from its `environment` block.
+  2. `KeyStore.Signer(ctx)` returns the host-local `crypto.Signer`, creating an ECDSA P-256 key on first
+     use. `FileKeyStore` writes `0600` files; TPM and OS keystores are the caller's.
+  3. `Enroll` connects without a client certificate, requires a chain certificate whose SHA-256 matches
+     the token (or, for a service account token, a chain to the supplied roots), verifies the full chain
+     against that root, and checks the server's SPIFFE ID and trust domain. Only then does it send the
+     CSR (PKCS #10, [RFC 2986](https://www.rfc-editor.org/rfc/rfc2986)) with the credential.
+  4. `Result` returns the certificate and chain, the CA bundle, and the environment ID, name, and tier,
+     which `forge-agent` records (0001).
+  5. `Renewer` renews over mutual TLS at two-thirds of the certificate's lifetime and retries with backoff
+     through the final third. It serves the current certificate as a `CertificateSource`. The same code
+     covers 7-day service certificates and 30–90-day agent certificates.
+
+### Dependencies
+
+- **`github.com/servercurio/forge-api-schema`** — models and embedded documents.
+- **`golang.org/x/crypto`** — `ocsp` in `pkg/revocation` only.
+- **Nothing else in the root module.** No `forge-common`, zerolog, OpenTelemetry, gRPC, `go-spiffe` (whose
+  [`go.mod`](https://github.com/spiffe/go-spiffe/blob/main/go.mod) requires `google.golang.org/grpc`), or
+  `oapi-codegen/runtime`. A CI allowlist on `go list -deps` keeps it that way.
+- **Nested modules** — `conformance` uses kin-openapi v0.149.0; `examples` uses `forge-common`.
+- **Consumers** — `forge-cli`, `forge-agent`, `forge-gateway`, and every service (for identity packages
+  and service-to-service clients), plus third parties.
+
+### Data & storage
+
+None of its own. `FileKeyStore` and a `Renewer` persist a key and certificate only to paths the caller
+supplies; the caller decides where state lives.
+
+### Security
+
+- **Environment pin required.** `client.New` fails without `WithEnvironment`. The gateway certificate
+  must chain to the pinned roots and carry `spiffe://<environment-id>/service/forge-gateway` before any
+  token is sent, which implements 0001's `forge-cli` rule for every SDK user.
+- **Secrets stay opaque.** `auth` token values have a `String()` that prints `[redacted]`. Fields marked
+  `x-forge-sensitive` are redacted by generated `String()` methods. The SDK never logs.
+- **Keys stay local.** Private keys are used through `crypto.Signer` and never serialized by the SDK,
+  except by `FileKeyStore` with `0600` permissions.
+- **Fail closed.** Revocation errors, a missing or duplicate SPIFFE URI SAN, a trust-domain mismatch, and
+  a CA-hash mismatch during enrollment all abort the connection.
+- **Fuzzing** covers the token and SPIFFE parsers, since both handle untrusted input
+  ([Go fuzzing](https://go.dev/doc/security/fuzz/)).
+
+### Environment awareness
+
+The SDK is a library and has no tier of its own. It enforces environment identity: every connection is
+bound to one environment ID, and `client.PeerEnvironment()` reports the verified value. Enrollment returns
+the environment's name, tier, ID, and CA bundle, typed with the tier enum from `forge-api-schema`'s
+`common/v1`. Hosts decide how the tier changes behavior, through `forge-common`
+([Environment awareness](0001-project-repositories.md#environment-awareness)).
+
+### Logging & telemetry
+
+The SDK does not log or import OpenTelemetry. Callers pass `WithTransportWrapper`; `forge-cli`,
+`forge-agent`, and services pass `forge-common`'s instrumented transport, which adds W3C `traceparent` and
+client spans ([0004](0004-forge-common.md)). `*problem.Error.TraceID` carries the server's trace ID into
+callers' logs. Third parties can use the same hook with any instrumentation.
+
+### Configuration
+
+`client.Config` has lowerCamelCase `yaml` and `json` tags and implements the starters' `FromEnv(prefix)`
+and `Validate()`, reading variables with `os.LookupEnv`. Hosts mount it under `<PREFIX>_GATEWAY_*`:
+
+| YAML (`gateway.`) | Variable                             | Notes                                     |
+|-------------------|--------------------------------------|-------------------------------------------|
+| `url`             | `<PREFIX>_GATEWAY_URL`               | required                                  |
+| `tokenFile`       | `<PREFIX>_GATEWAY_TOKEN_FILE`        | bearer token file, re-read on change      |
+| `timeout`         | `<PREFIX>_GATEWAY_TIMEOUT`           | per attempt, Go duration, default `30s`   |
+| `retry.maxAttempts` | `<PREFIX>_GATEWAY_RETRY_MAX_ATTEMPTS` | default `3`                            |
+
+The environment ID and CA bundle come from the host's `environment` block, as in
+[CONVENTIONS.md](CONVENTIONS.md), rather than being duplicated here.
+
+### Build, release & versioning
+
+- **Bootstrap** from `go-library-starter`, removing its runtime packages (`logging`, `config`, `pool`,
+  `health`, `greeter`, `obfusicate`) that a client library does not need.
+- **Regeneration** — a `forge-api-schema` release triggers a 100-series workflow here that updates the
+  dependency, runs `task generate`, and opens a pull request titled `feat: regenerate for forge-api-schema
+  vX.Y.Z`.
+- **Versioning** — one module and one version (0001), `v0.x` until accepted. Each release notes the
+  `forge-api-schema` version it was generated from, and `client.SchemaVersion` exposes it.
+- **Compatibility** — adding an API version is a minor release. Removing a package follows the API's
+  stage rules in [0002](0002-forge-api-schema.md).
+
+### Testing
+
+- **Unit tests** against `httptest` TLS servers using `sdktest` certificates: pinning, redirects, retries,
+  `Retry-After`, problem decoding, and pagination.
+- **Identity tests** — tables of valid and invalid SPIFFE IDs, root rotation with two roots, and
+  revocation with a fake responder built on `ocsp.CreateResponse` and CRLs from
+  `x509.CreateRevocationList`, including fail-closed timing.
+- **Enrollment** — end-to-end tests against a fake identity endpoint: a wrong CA hash, a wrong trust
+  domain, a reused token, and renewal at two-thirds of the lifetime with a fake clock. The same cases
+  run for a service account token file, plus a server that does not chain to the supplied roots.
+- **Conformance** (nested module) — requests produced by every generated operation are validated against
+  their OpenAPI documents with kin-openapi.
+- **Drift, fuzzing, dependencies** — regenerated code must match, fuzzers run briefly in CI, the module
+  allowlist is enforced, and all tests run with `-race`.
+
+## Alternatives considered
+
+- **Stock oapi-codegen client with `oapi-codegen/runtime`** — least effort, but 3 linked modules and 79 in
+  `go list -m all` in the measurement above. It remains the fallback if the templates prove costly.
+- **Hand-written clients** — no generator coupling, but drift from the contract is likely across
+  several services.
+- **[ogen](https://github.com/ogen-go/ogen) clients** — its `go.mod` requires OpenTelemetry, zap, fasthttp,
+  and more.
+- **Per-service SDK modules** — ruled out by 0001's *SDK modularity* decision.
+- **[`go-spiffe`](https://github.com/spiffe/go-spiffe)** — mature, but requires gRPC and is built around
+  the SPIRE Workload API, which 0001 does not run.
+- **Identity packages in `forge-common`** — keeps `forge-sdk` API-only, but every third-party SDK user
+  would pull zerolog and OpenTelemetry through `forge-common`, and `forge-common` would mix security
+  with observability.
+- **SDK depends on `forge-common`** for logging and tracing — consistent wiring, but imposes Forge's
+  logging stack on third parties.
+
+## Open questions
+
+- **`forge-common` in the SDK** — 0001 says `forge-common` is used by every Forge Go repository. This
+  draft keeps it out of the SDK's root module (injection plus the `examples` module). Does that meet the
+  intent?
+- **Service enrollment endpoint** — proposed directly on `forge-identity`, because `forge-gateway` needs
+  its own certificate first. Or should it go through the gateway like agents? To settle with
+  [0006](0006-forge-identity.md) and [0008](0008-forge-gateway.md).
+- **Enrollment token format** — needs an offline-parseable environment ID and CA hash (0006).
+- **Operator ingress behind a public certificate** — if a WebPKI load balancer fronts the operator
+  ingress, how does a client pin the environment before sending a token?
+- **Templates** — is maintaining oapi-codegen user templates worth avoiding `oapi-codegen/runtime`?
+- **Leaf key algorithm** — ECDSA P-256 is proposed for broad TPM support. P-384 or Ed25519?
+- **`internal` operations** — should the public SDK include clients for `internal`-audience operations, or
+  should services get them from a separate package?
+
+## References
+
+- [0001 — Project Repositories](0001-project-repositories.md) — SDK modularity, agent enrollment,
+  environment identity, service certificate bootstrap.
+- [0002 — forge-api-schema](0002-forge-api-schema.md) — contract, extensions, versioning.
+- [CONVENTIONS.md](CONVENTIONS.md) — cross-cutting conventions.
+- [oapi-codegen](https://github.com/oapi-codegen/oapi-codegen) — client generation and the
+  `output-options.user-templates` setting.
+- [oapi-codegen/runtime `go.mod`](https://github.com/oapi-codegen/runtime/blob/main/go.mod) — its
+  requirements (gin, iris, Echo v4, `google/uuid`, `go-jsonmerge`).
+- [SPIFFE ID](https://github.com/spiffe/spiffe/blob/main/standards/SPIFFE-ID.md) and
+  [X.509-SVID](https://github.com/spiffe/spiffe/blob/main/standards/X509-SVID.md).
+- [`go-spiffe` `go.mod`](https://github.com/spiffe/go-spiffe/blob/main/go.mod) — requires gRPC.
+- [`crypto/x509`](https://pkg.go.dev/crypto/x509#Certificate) — URI SANs and CRL parsing.
+- [`golang.org/x/crypto/ocsp`](https://pkg.go.dev/golang.org/x/crypto/ocsp) — OCSP requests and responses.
+- [RFC 5280](https://www.rfc-editor.org/rfc/rfc5280) — certificates and CRLs;
+  [RFC 6960](https://www.rfc-editor.org/rfc/rfc6960) — OCSP;
+  [RFC 2986](https://www.rfc-editor.org/rfc/rfc2986) — PKCS #10 CSRs.
+- [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) — problem details.
+- [`kubeadm join`](https://kubernetes.io/docs/reference/setup-tools/kubeadm/kubeadm-join/) — token and
+  CA-hash bootstrap model.
+- [Go `iter` package](https://pkg.go.dev/iter) and [Go fuzzing](https://go.dev/doc/security/fuzz/).
+- [W3C Trace Context](https://www.w3.org/TR/trace-context/).
+- [kin-openapi](https://github.com/getkin/kin-openapi) — request validation in conformance tests.
+- [ogen](https://github.com/ogen-go/ogen) — alternative generator.
