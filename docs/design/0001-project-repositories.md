@@ -326,8 +326,8 @@ or provisioner to deploy itself.
   the external `go-*-starter` baselines.
 - **Shared meta.** Each new repository inherits the meta set this repository defines — GPG + DCO commit
   signing, Conventional Commits (validated on PR titles), the numeric-prefix CI convention
-  (200 = PR-triggered, 300 = main-push, 100 = operational/release, 800 = reusable), `CODEOWNERS`, and
-  the Apache-2.0 `LICENSE`.
+  (200 = PR-triggered, 300 = main-push, 100 = operational/release, 800 = reusable), `CODEOWNERS`, the
+  Apache-2.0 `LICENSE`, and SPDX license headers enforced by license-eye.
 - **One source of truth per contract.** The wire contract lives once in `forge-api-schema`; clients
   consume the generated `forge-sdk` rather than re-deriving types. Logging and telemetry are likewise
   implemented once, in `forge-common`, rather than per repository.
@@ -402,6 +402,26 @@ deployment:
   verifies the gateway before sending credentials. `forge-infrastructure` inventories supply each
   environment's ID and CA bundle to the services they deploy.
 
+### License headers and license files
+
+Every Forge repository — `forge`, each `forge-*` repository, and the `go-*-starter` baselines they are
+seeded from — carries an Apache-2.0 `LICENSE` file at its root, and every tracked file starts with an
+[SPDX license identifier](https://spdx.dev/learn/handling-license-info/) in its own comment syntax:
+
+- **Header** — the identifier only, for example `// SPDX-License-Identifier: Apache-2.0` in Go, `#` in
+  YAML and shell, `--` in SQL, and an HTML comment in Markdown and SVG. Copyright is carried by
+  `LICENSE` and version history, not by each file.
+- **Enforced** — [license-eye](https://github.com/apache/skywalking-eyes) (`header check`, configured by
+  `.licenserc.yaml`) runs on every pull request and on `main` through an `800-call-license-headers`
+  reusable workflow, so a missing header fails the build. It is installed with `go install` at a pinned
+  version rather than through its GitHub Action, which references other actions by tag.
+- **Exceptions** — only files that cannot hold a comment (`LICENSE`, JSON, `go.sum`, `.gitkeep`, and
+  embedded data such as version strings) are listed in `.licenserc.yaml`.
+- **Generated files** — generators emit the header themselves, so regenerating never fails the check.
+
+Repositories that third parties create from `forge-plugin-starter` choose their own license and SPDX
+identifier.
+
 ## Bootstrapping a repository from a starter
 
 The repeatable procedure for standing up any repository in the inventory:
@@ -410,7 +430,7 @@ The repeatable procedure for standing up any repository in the inventory:
    `forge-infrastructure`, from the Ansible + OPA layout described above).
 2. **Rename** the Go module path and any template placeholders to the `forge-<name>` identity.
 3. **Adopt shared meta** from `forge` — signing config, CI workflows (numeric-prefix), `CODEOWNERS`,
-   license, and the contribution/security docs.
+   license, `.licenserc.yaml` with the license-header check, and the contribution/security docs.
 4. **Wire shared dependencies** — services and clients pin `forge-api-schema` / `forge-sdk`; plugins
    pin `forge-agent-plugin-sdk`; every Go repository replaces the starter's logging and telemetry
    with `forge-common`.
@@ -496,6 +516,10 @@ Answers to this document's earlier open questions (2026-09-14 to 2026-09-15). Th
   Every launch pins the SHA-256 through go-plugin `SecureConfig`. The agent binary links no Sigstore
   verifier: sigstore-go v1.3.0's verifier compiles in 71 modules, confined to the validator plugin (79
   with go-plugin; measured 2026-09-15).
+- **License headers** — Every repository carries an Apache-2.0 `LICENSE` and identifier-only SPDX
+  headers in every file, enforced by license-eye in pull-request and main-branch checks, with an explicit
+  ignore list for files that cannot hold a comment. See
+  [License headers and license files](#license-headers-and-license-files).
 
 ## Open questions
 
@@ -550,6 +574,9 @@ None at present. Answered questions are recorded under
 - [Kubernetes API versioning](https://kubernetes.io/docs/reference/using-api/#api-versioning) — model
   for `apiVersion`/`kind` desired-state documents.
 - [JSON Schema](https://json-schema.org/) — schema format published from `forge-api-schema`.
+- [SPDX license identifiers](https://spdx.dev/learn/handling-license-info/) and
+  [skywalking-eyes (license-eye)](https://github.com/apache/skywalking-eyes) — per-file license headers
+  and their enforcement.
 - [`kubeadm join`](https://kubernetes.io/docs/reference/setup-tools/kubeadm/kubeadm-join/) — token plus
   CA-hash bootstrap model used for agent enrollment.
 - [RFC 5280](https://www.rfc-editor.org/rfc/rfc5280) — X.509 certificates and certificate revocation
