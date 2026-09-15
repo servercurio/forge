@@ -16,8 +16,9 @@
 ## Context & goals
 
 In 0001, plugins are separate processes that `forge-agent` launches over gRPC with
-`hashicorp/go-plugin`. Before every launch the agent verifies a cosign signature and pins the binary's
-SHA-256 through `SecureConfig`. The agent passes its environment ID, and a plugin refuses an agent from
+`hashicorp/go-plugin`. `forge-provisioner` verifies plugin release signatures at import, and before
+every launch the agent pins the binary's SHA-256, taken from its signed directive bundle, through
+`SecureConfig`. The agent passes its environment ID, and a plugin refuses an agent from
 another environment
 ([Agent plugin ecosystem](0001-project-repositories.md#agent-plugin-ecosystem),
 [Environment identity](0001-project-repositories.md#environment-identity)). This repository is "the
@@ -243,7 +244,9 @@ span per plugin RPC. The plugin extracts the remote context, so `forge-common`'s
 - **gRPC floor** — go-plugin v1.8.0 requires gRPC v1.61.0 and protobuf v1.36.6. The SDK requires
   current versions, so minimal version selection gives every plugin current security fixes.
 - **Not used** — `sigstore-go` v1.3.0: its verifier links 71 modules, including gRPC, OpenTelemetry,
-  and `go-openapi`, and `go list -m all` reports 368. Verification stays in the agent.
+  and `go-openapi`, and `go list -m all` reports 367
+  ([0012](0012-forge-agent.md#sigstore-verifier-measurements)). Verification runs in
+  `forge-provisioner` ([0011](0011-forge-provisioner.md)), not in plugins or the agent.
 - **Tools** (not in `go.mod`) — buf v1.73.0, `protoc-gen-go` v1.36.12, and `protoc-gen-go-grpc` v1.6.2.
   All three were verified to run through `go run <module>@<version>`. `task tools` installs them into
   `.tools/bin` for `buf.gen.yaml`'s `local:` plugins.
@@ -256,7 +259,8 @@ None; only in-memory grant and environment state per plugin process.
 
 ### Security
 
-- **Launch chain** — cosign verification and install (0012), then the SHA-256 in `SecureConfig` on
+- **Launch chain** — publisher signature verification at import (0011), a provisioner-signed pin and a
+  digest-checked install (0012), then the SHA-256 in `SecureConfig` on
   every launch, mutual TLS on the socket, the environment check, and capability gates.
 - **`SecureConfig` gap** — go-plugin hashes `Path`, then executes `Path`, so a writer could swap the
   file in between. 0012's root-owned, content-addressed install directories and the writable-path
@@ -332,7 +336,7 @@ config mounts under the child keys `environment` and `rpc`:
   is stronger, but the parent process already controls the binary and its environment, so the main
   risk is misconfiguration, which an ID comparison catches. Revisit if plugins hold environment secrets.
 - **Signature verification in `host`** — `sigstore-go` would add 71 linked modules for every plugin
-  author.
+  author and the agent; `forge-provisioner` verifies at import instead.
 - **Logs over a `GRPCBroker` callback** — structured, but crash output is lost and a second connection
   is needed.
 - **`otelgrpc` interceptors** — would import OpenTelemetry into the SDK.
