@@ -176,13 +176,15 @@ independently of the internal identity system.
 
 `forge-identity` runs an internal certificate authority (CA) for agent identities. Its intermediate CA
 signs agent certificates; the root CA stays offline in an HSM or cloud key-management service. The
-intermediate CA key is held in one of two backends, chosen per deployment:
+intermediate CA key is held in one of two backends:
 
-- **HSM or cloud KMS** — `forge-identity` signs through the HSM or KMS API, so the key never enters the
-  service's memory or disk.
-- **Encrypted store in `forge-identity`** — the key is stored encrypted and decrypted in memory to sign.
-  Its key-encryption key (KEK) comes from an external secret manager at startup, is held only in
-  memory, and never sits on disk beside the encrypted CA key.
+- **HSM or cloud KMS (preferred)** — `forge-identity` signs through the HSM or KMS API, so the key never
+  enters the service's memory or disk. This is the expected backend for production.
+- **KEK-sealed store in `forge-identity` (last resort)** — the key is stored encrypted and decrypted in
+  memory to sign. Its key-encryption key (KEK) comes from an external secret manager at startup, is held
+  only in memory, and never sits on disk beside the encrypted CA key. Use it for testing and staging, or
+  in production only when no HSM or KMS is available: while the key is in memory, a compromised
+  `forge-identity` can steal it and issue agent certificates.
 
 A new agent bootstraps as follows, modeled on
 [`kubeadm join`](https://kubernetes.io/docs/reference/setup-tools/kubeadm/kubeadm-join/):
@@ -334,8 +336,9 @@ Answers to this document's earlier open questions (2026-09-14 to 2026-09-15). Th
   issued by `forge-identity`, kept apart from the operator and third-party entry point.
 - **Agent enrollment** — `forge-identity` runs an internal CA and signs CSRs presented with a single-use
   enrollment token created in `forge-cli` (1 hour by default, 24 hours maximum); the token pins the CA
-  hash for first contact. The intermediate CA key lives in an HSM or cloud KMS, or in an encrypted store
-  whose KEK comes from an external secret manager. Agent keys are generated on the host and
+  hash for first contact. The intermediate CA key lives in an HSM or cloud KMS (preferred); a store
+  sealed with a KEK from an external secret manager is a last resort for testing, staging, or
+  production without an HSM or KMS. Agent keys are generated on the host and
   hardware-backed when available. Certificates last 30–90 days per tenant (default 30) and renew at
   two-thirds of their lifetime, with OCSP checks, CRL fallback, and fail-closed revocation. See
   [Agent enrollment](#agent-enrollment).
