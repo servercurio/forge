@@ -6,8 +6,9 @@
 - **Summary:** `forge-identity` is the environment's authorization server and certificate authority. It
   implements a minimal OIDC provider and SAML IdP, stores accounts, tenants, RBAC, sessions, and API
   tokens in PostgreSQL, and delegates login pages to `forge-sso`. Its intermediate CA issues agent,
-  service, and control-node certificates from enrollment tokens and publishes OCSP and CRLs, with keys
-  in an HSM or KMS through PKCS#11.
+  service, and control-node certificates from enrollment tokens, or from projected service account
+  tokens for services on Kubernetes, and publishes OCSP and CRLs, with keys in an HSM or KMS through
+  PKCS#11.
 
 > An initial draft with concrete proposals, bounded by the
 > [Resolved decisions](0001-project-repositories.md#resolved-decisions) in 0001. Conventions other
@@ -43,7 +44,8 @@ tokens and service certificate bootstrap
   authorization, token exchange) and SAML 2.0 IdP.
 - **Directory** — accounts, groups, service accounts, tenants, role bindings, federated identity links.
 - **Credentials** — password and WebAuthn verification, sessions, refresh tokens, API tokens.
-- **CA** — enrollment tokens, CSR issuance, renewal, revocation, OCSP responder, CRL.
+- **CA** — enrollment tokens, Kubernetes service account token verification, CSR issuance, renewal,
+  revocation, OCSP responder, CRL.
 - **Audit** — an append-only record of every security-relevant change and decision.
 
 ### Interfaces
@@ -102,6 +104,7 @@ No implicit or password grants, following the OAuth 2.0 security BCP
 | `POST /identity/v1alpha1/revocations`                         | operator   | bearer         |
 | `POST /identity/v1alpha1/service-enrollment-tokens`           | internal   | mTLS, control node only |
 | `POST /identity/v1alpha1/service-enrollments`                 | internal   | none           |
+| `GET /identity/v1alpha1/cluster-issuers`                      | internal   | mTLS, control node only |
 | `GET/PUT /identity/v1alpha1/login-challenges/{challengeId}`   | internal   | mTLS, `forge-sso` only |
 | `POST /identity/v1alpha1/password-verifications`, `/webauthn-assertions` | internal | mTLS, `forge-sso` only |
 | `POST /identity/v1alpha1/federated-logins`                    | internal   | mTLS, `forge-sso` only |
@@ -144,6 +147,67 @@ Redemption is one
 `UPDATE … SET used_at = now() WHERE id = $1 AND used_at IS NULL AND expires_at > now() RETURNING …`
 in the enrollment transaction, so a token cannot be used twice.
 
+#### Kubernetes service account enrollment
+
+Services on Kubernetes ([0005](0005-forge-infrastructure.md)) enroll with a projected service account
+token instead of a service enrollment token, on the same `service-enrollments` operation. The request
+carries exactly one of `enrollmentToken` or `serviceAccountToken`, both `x-forge-sensitive`. Agents
+cannot use this path. Pods enroll on start, scale-out, and rescheduling without the control node.
+
+**Cluster issuer registry** — loaded from `kubernetes.clusterIssuersFile`, which `forge-infrastructure`
+renders from the inventory. There is no write API, so a registration arrives only through a signed
+commit and the control node, and each JWKS fingerprint is recorded at the environment's key ceremony.
+`GET cluster-issuers` returns the loaded entries and the file's SHA-256 so the control node can detect
+drift.
+
+```yaml
+clusters:
+  - id: east-1                          # lowercase DNS label
+    state: active                       # active | retired
+    issuer: https://oidc.east-1.example.net
+    jwks:
+      mode: pinned                      # pinned (default) | discovery
+      file: /etc/forge-identity/clusters/east-1.jwks.json
+      # discovery: { caFile: /etc/forge-identity/clusters/east-1-ca.pem, refresh: 1h }
+    serviceAccounts:
+      - { namespace: forge-qa-east, name: forge-inventory, service: forge-inventory }
+```
+
+**Verification** — offline; `forge-identity` never calls a cluster's API server:
+
+1. **Header** — the token is at most 8 KiB, `alg` is `RS256` or `ES256`
+   ([RFC 8725](https://www.rfc-editor.org/rfc/rfc8725)), and `none`, HMAC, and `jwk`, `jku`, `x5u`, or
+   `x5c` headers are rejected.
+2. **Issuer and key** — `iss` must exactly equal an `active` cluster's `issuer`, and the signature must
+   verify with a key from that cluster's JWKS only. In `discovery` mode the JWKS comes from the issuer's
+   discovery document over HTTPS verified only against `caFile`, is cached for `refresh`, and every key
+   change is audited
+   ([issuer discovery](https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/#service-account-issuer-discovery)).
+3. **Audience** — `aud` must be exactly one value, `spiffe://<environment-id>/service/forge-identity`,
+   so a token for another environment or audience fails.
+4. **Age** — `exp`, `iat`, and `nbf` are required with 60 seconds of skew, and `now − iat` must not
+   exceed `kubernetes.maxTokenAge` (10 minutes) whatever `exp` says. Projected tokens last at least 600 s
+   ([projected volumes](https://kubernetes.io/docs/concepts/storage/projected-volumes/)).
+5. **Pod binding** — `jti`, `kubernetes.io.namespace`, `kubernetes.io.serviceaccount`, and
+   `kubernetes.io.pod.uid` are required; Kubernetes embeds the JTI and pod and node claims by default
+   since 1.32 ([service account claims](https://kubernetes.io/docs/reference/access-authn-authz/service-accounts-admin/)).
+   `sub` must be `system:serviceaccount:<namespace>:<name>` and agree with those claims.
+6. **Mapping** — the service account must be listed for that cluster, and its `service` is the only
+   SPIFFE ID the certificate may carry: only `forge-inventory`'s service account obtains
+   `spiffe://<environment-id>/service/forge-inventory`. Any other name in the CSR fails.
+
+**Replay** — issuance inserts `SHA-256(iss, jti)` into `service_account_enrollments` in the same
+transaction, so one token yields one certificate. A retry with the same token and the same CSR public
+key returns the certificate already issued, for an init container that failed after enrolling; any other
+reuse fails and is audited. Rows are deleted after the token's `exp`.
+
+**Deregistration** — setting a cluster to `retired` rejects its tokens and renewals of certificates it
+enrolled, and revokes those certificates with reason `cessationOfOperation`. An entry is deleted only
+after its last certificate expires. Offline checks cannot see a deleted pod; its certificate stays valid
+until revoked or expired (see Open questions).
+
+After enrollment the service renews over mutual TLS like any other service.
+
 #### Certificate profiles
 
 | Profile       | SPIFFE ID                                    | EKU               | Lifetime                     |
@@ -172,7 +236,7 @@ Measured on 2026-09-15 with throwaway modules (`go list -deps`, Go 1.27.1):
 
 | Module                                            | Version  | Linked modules | Use                          |
 |---------------------------------------------------|----------|----------------|------------------------------|
-| `github.com/go-jose/go-jose/v4`                    | v4.1.5   | 1              | JWS/JWT, JWKS                |
+| `github.com/go-jose/go-jose/v4`                    | v4.1.5   | 1              | JWS/JWT, JWKS, SA tokens     |
 | `github.com/miekg/pkcs11`                          | v1.1.2   | 1 (cgo)        | HSM and KMS signing          |
 | `github.com/crewjam/saml`                          | v0.5.1   | 6              | SAML IdP                     |
 | `github.com/go-webauthn/webauthn`                  | v0.18.1  | 12             | WebAuthn verification        |
@@ -210,6 +274,7 @@ PostgreSQL through the starter's pgx, bun, and goose migrations. Every tenant-sc
 | `sessions`, `login_challenges` | `id`, `principal_id`, `amr`, `expires_at`, `revoked_at`                      |
 | `refresh_tokens`, `api_tokens` | `token_hash`, `family_id`, `principal_id`, `expires_at`, `revoked_at`        |
 | `enrollment_tokens`            | `id`, `kind`, `secret_hash`, `bindings`, `expires_at`, `used_at`             |
+| `service_account_enrollments`  | `cluster_id`, `token_hash`, `pod_uid`, `key_sha256`, `serial`, `expires_at`  |
 | `certificates`                 | `serial`, `spiffe_id`, `profile`, `not_after`, `revoked_at`, `reason`        |
 | `signing_keys`                 | `kid`, `purpose`, `backend`, `key_ref`, `sealed_key`, `state`                |
 | `audit_events`                 | `seq`, `time`, `actor`, `action`, `target`, `outcome`, `prev_hash`, `hash`   |
@@ -230,11 +295,14 @@ PostgreSQL through the starter's pgx, bun, and goose migrations. Every tenant-sc
 - **CA constraints** — the intermediate has path length 0 and a URI name constraint for the trust
   domain (0005), so even a misissued leaf cannot name another environment.
 - **Caller pinning** — internal operations check the caller's SPIFFE ID: `forge-sso` for login
-  operations, `forge-gateway` for introspection, `control-node/*` for service enrollment tokens.
+  operations, `forge-gateway` for introspection, `control-node/*` for service enrollment tokens and
+  cluster issuers.
 - **Brute force** — failed password, WebAuthn, and user-code attempts are counted per account and per
   source in PostgreSQL, with exponential delays rather than hard lockouts that attackers could abuse.
 - **No enumeration** — verification responses do not distinguish unknown accounts from bad passwords.
-- **Fuzzing** — token, CSR, and SAML request parsers.
+- **Service account tokens** — accepted only in the request body, never logged or stored; only the
+  SHA-256 of `iss` and `jti` is kept. Pinned JWKS files hold public keys only.
+- **Fuzzing** — token, service account token, CSR, and SAML request parsers.
 
 ### Environment awareness
 
@@ -247,8 +315,9 @@ PostgreSQL through the starter's pgx, bun, and goose migrations. Every tenant-sc
 ### Logging & telemetry
 
 - Audit events are also logged at `info` with `forge.audit.action`, `forge.audit.outcome`,
-  `forge.principal.id`, `forge.tenant.id`, and `forge.certificate.serial`. Secrets, token values, and
-  CSR contents are never logged.
+  `forge.principal.id`, `forge.tenant.id`, and `forge.certificate.serial`; enrollments add
+  `forge.enrollment.credential` and `forge.kubernetes.cluster.id`. Secrets, token values including
+  service account tokens, and CSR contents are never logged.
 - Metrics: `forge.identity.tokens.issued`, `forge.identity.certificates.issued`,
   `forge.identity.enrollments.failed`, `forge.identity.ocsp.responses`, and
   `forge.identity.keybackend.sign.duration`.
@@ -270,12 +339,16 @@ Prefix `FORGE_IDENTITY_`, plus the starter's `server` and `database` blocks and 
 | `tokens.accessTtl`                 | `FORGE_IDENTITY_TOKENS_ACCESS_TTL`          | `10m`                    |
 | `tokens.signingKeyRotation`        | `FORGE_IDENTITY_TOKENS_SIGNING_KEY_ROTATION`| `720h`                   |
 | `enrollment.agentDefaultTtl`       | `FORGE_IDENTITY_ENROLLMENT_AGENT_DEFAULT_TTL` | `1h` (max `24h`)       |
+| `kubernetes.clusterIssuersFile`    | `FORGE_IDENTITY_KUBERNETES_CLUSTER_ISSUERS_FILE` | none (path disabled) |
+| `kubernetes.maxTokenAge`           | `FORGE_IDENTITY_KUBERNETES_MAX_TOKEN_AGE`   | `10m` (max `15m`)        |
 | `certificates.serviceLifetime`     | `FORGE_IDENTITY_CERTIFICATES_SERVICE_LIFETIME` | `168h` (fixed by 0001) |
 | `revocation.ocspNextUpdate`        | `FORGE_IDENTITY_REVOCATION_OCSP_NEXT_UPDATE`| `1h`                     |
 | `revocation.crlNextUpdate`         | `FORGE_IDENTITY_REVOCATION_CRL_NEXT_UPDATE` | `24h`                    |
 
 Validation rejects values beyond 0001's bounds: agent token TTL over 24 hours, agent certificates
-outside 30–90 days, or a service lifetime other than 7 days.
+outside 30–90 days, or a service lifetime other than 7 days. It also rejects a
+`kubernetes.maxTokenAge` over 15 minutes, a cluster without `jwks`, and a service account mapped to more
+than one service.
 
 ### Build, release & versioning
 
@@ -292,7 +365,9 @@ outside 30–90 days, or a service lifetime other than 7 days.
 - **CA** — SoftHSM2 in CI for the `pkcs11` backend; issuance, renewal, and revocation with a fake
   clock; chains verified through `forge-sdk` `pkg/tlsconfig`.
 - **Enrollment** — concurrent redemption of one token succeeds exactly once; wrong environment, tenant,
-  and expired tokens fail.
+  and expired tokens fail. Service account tokens from kind and synthetic issuers fail with a wrong
+  issuer, audience, algorithm, or key, an age over `maxTokenAge`, an unmapped or other service's
+  account, a retired cluster, or a replay with a different CSR key.
 - **Data** — migrations up and down on PostgreSQL in CI; a test asserts every tenant-scoped query
   filters by `tenant_id`.
 
@@ -311,6 +386,10 @@ outside 30–90 days, or a service lifetime other than 7 days.
   identity store, which 0001's auth split exists to avoid.
 - **PASETO tokens** — simpler format, but no OIDC or RFC 9068 interoperability.
 - **TOTP second factor** — widely supported and phishable; deferred behind WebAuthn.
+- **`TokenReview` against each cluster** — sees deleted pods, but gives `forge-identity` credentials and
+  a network path to every cluster API server, and enrollment fails when one is down.
+- **A write API for cluster issuers** — adds clusters without a deployment, but moves registration
+  outside signed commits and Conftest.
 
 ## Open questions
 
@@ -323,6 +402,10 @@ outside 30–90 days, or a service lifetime other than 7 days.
 - **SAML signing algorithm** — ECDSA P-256 per CONVENTIONS, or RSA for relying parties that lack ECDSA?
 - **Root CA hash in enrollment tokens** during root rotation — one hash or both?
 - **Local accounts in `production`** — break-glass only, with federation required for everyone else?
+- **Pinned JWKS on managed clusters** — do providers rotate service account signing keys often enough
+  that `discovery` mode becomes necessary (unverified)?
+- **Deleted pods** — offline checks cannot see a pod's deletion. Should deployment tooling revoke its
+  certificate before the 7-day expiry?
 
 ## References
 
@@ -353,4 +436,10 @@ outside 30–90 days, or a service lifetime other than 7 days.
 - [`golang.org/x/crypto/ocsp`](https://pkg.go.dev/golang.org/x/crypto/ocsp) and
   [`crypto/x509`](https://pkg.go.dev/crypto/x509).
 - [OpenID certification and conformance suite](https://openid.net/certification/).
+- Kubernetes [service account tokens](https://kubernetes.io/docs/reference/access-authn-authz/service-accounts-admin/),
+  [issuer discovery](https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/#service-account-issuer-discovery),
+  [projected volumes](https://kubernetes.io/docs/concepts/storage/projected-volumes/), and
+  [feature gates](https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/)
+  (`ServiceAccountTokenJTI`, `ServiceAccountTokenPodNodeInfo`); [RFC 7519](https://www.rfc-editor.org/rfc/rfc7519)
+  and [RFC 8725](https://www.rfc-editor.org/rfc/rfc8725).
 - [go-echo-starter](https://github.com/servercurio/go-echo-starter) — Echo v5, pgx, bun, goose.
