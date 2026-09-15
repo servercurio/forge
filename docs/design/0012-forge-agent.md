@@ -6,7 +6,8 @@
 - **Summary:** `forge-agent` is one binary run as two processes: an unprivileged network daemon that
   enrolls, renews, pulls signed directive bundles, and reports, and a privileged executor with no network
   access that verifies bundles, re-checks OPA, runs Tengo, enforces resources, and launches verified
-  plugins. Keys are TPM-backed where possible; sigstore-go is the heaviest dependency and is flagged.
+  plugins. Keys are TPM-backed where possible; plugin signatures are verified centrally by
+  `forge-provisioner`, so the agent links no Sigstore verifier.
 
 > An initial draft with concrete proposals, bounded by the
 > [Resolved decisions](0001-project-repositories.md#resolved-decisions) in 0001. Conventions other
@@ -25,14 +26,16 @@ It reaches Forge only through the gateway's agent ingress via `forge-sdk`.
 
 - Nothing that parses network input runs as root.
 - Idempotent, converge-then-verify enforcement that keeps working while offline.
-- Every plugin launch verified: Sigstore identity plus SHA-256 pin.
+- Every plugin launch verified: a SHA-256 pin from a provisioner-signed bundle, for a release whose
+  Sigstore signature `forge-provisioner` verified.
 - A measured dependency set, with the heaviest pieces confined and questioned.
 
 **Non-goals**
 
 - The plugin gRPC contract — [0013](0013-forge-agent-plugin-sdk.md); first-party plugins —
   [0014](0014-forge-agent-plugins.md).
-- Desired-state authoring, targeting, and bundle signing — [0011](0011-forge-provisioner.md).
+- Desired-state authoring, targeting, bundle signing, and plugin signature verification —
+  [0011](0011-forge-provisioner.md).
 - Inventory schemas and storage — [0009](0009-forge-inventory.md); CA and token format —
   [0006](0006-forge-identity.md).
 
@@ -116,10 +119,12 @@ every 6 hours and changed-digest deltas every 5 minutes go to `forge-inventory` 
   ([client.go L662](https://github.com/hashicorp/go-plugin/blob/v1.8.0/client.go#L662),
   [L735](https://github.com/hashicorp/go-plugin/blob/v1.8.0/client.go#L735)), so a writable store would
   leave a swap window. Nothing but root can write this store.
-- **Before every launch** (executor): the digest is pinned by the accepted bundle; sigstore-go verifies
-  `<name>.sigstore.json` offline against `plugins.trustedRootFile` with
-  `verify.WithArtifactDigest("sha256", pin)`, a certificate identity (issuer and SAN pattern) from
-  `plugins.trustedIdentities`, a transparency-log entry, and an SCT. Then go-plugin launches with
+- **Install** (executor): a downloaded plugin is hashed, and only a SHA-256 equal to a pin in the
+  accepted, signature-verified bundle is moved into the store. `forge-provisioner` verified that digest
+  against the publisher's Sigstore signature when the release was imported (0011); the agent does not
+  verify Sigstore bundles.
+- **Before every launch** (executor): the digest must still be pinned by the currently accepted bundle.
+  Then go-plugin launches with
   `SecureConfig{Checksum: pin, Hash: sha256.New()}`, `AllowedProtocols: [ProtocolGRPC]`, `AutoMTLS: true`,
   and `SkipHostEnv: true`.
 - **Environment** — the plugin's environment has `FORGE_PLUGIN_<NAME>_ENVIRONMENT_ID`, `_NAME`, and
@@ -141,43 +146,68 @@ every 6 hours and changed-digest deltas every 5 minutes go to `forge-inventory` 
 - **New, measured** on 2026-09-15 in throwaway `linux/amd64` modules (`CGO_ENABLED=0`, stripped), counting
   modules in `go list -deps`:
 
-| Module                               | Version        | Linked | Binary   | Notes                                          |
-|--------------------------------------|----------------|--------|----------|------------------------------------------------|
-| `hashicorp/go-plugin`                | v1.8.0         | 14     | 10.8 MiB | gRPC, genproto, hclog, yamux, `fatih/color`    |
-| `open-policy-agent/opa/v1/rego`      | v1.20.2        | 26     | 22.0 MiB | jwx, logrus, gqlparser; see 0011               |
-| `sigstore/sigstore-go`               | v1.3.0         | **71** | 17.5 MiB | 368 in `go list -m all`                        |
-| `d5/tengo/v2`                        | pseudo-version | 1      | 3.4 MiB  | see 0011                                       |
-| `google/go-tpm`                      | v0.9.8         | 2      | 2.6 MiB  | + `x/sys`                                      |
-| `shirou/gopsutil/v4`                 | v4.26.8        | 4      | 3.3 MiB  | `go-ole` and `wmi` on Windows, `purego` on macOS |
-| `google/certtostore` (Windows)       | v1.0.7         | 6      | —        | `go-ole`, `google/deck`, `StackExchange/wmi`   |
-| All of the above except certtostore  | —              | 102    | 33.3 MiB | 428 in `go list -m all`; 104 linked on Windows |
-| The same without sigstore-go, with jsonschema | —     | 44     | 29.4 MiB | 165 in `go list -m all`                        |
+| Module                                                                               | Version        | Linked | Binary   | Notes                                            |
+|--------------------------------------------------------------------------------------|----------------|--------|----------|--------------------------------------------------|
+| `hashicorp/go-plugin`                                                                | v1.8.0         | 14     | 10.8 MiB | gRPC, genproto, hclog, yamux, `fatih/color`      |
+| `open-policy-agent/opa/v1/rego`                                                      | v1.20.2        | 26     | 22.0 MiB | jwx, logrus, gqlparser; see 0011                 |
+| `sigstore/sigstore-go` (not linked)                                                  | v1.3.0         | 71     | 17.5 MiB | measured below; verification moved to 0011       |
+| `d5/tengo/v2`                                                                        | pseudo-version | 1      | 3.4 MiB  | see 0011                                         |
+| `google/go-tpm`                                                                      | v0.9.8         | 2      | 2.6 MiB  | + `x/sys`                                        |
+| `shirou/gopsutil/v4`                                                                 | v4.26.8        | 4      | 3.3 MiB  | `go-ole` and `wmi` on Windows, `purego` on macOS |
+| `google/certtostore` (Windows)                                                       | v1.0.7         | 6      | —        | `go-ole`, `google/deck`, `StackExchange/wmi`     |
+| **Proposed agent set** — above, without certtostore and sigstore-go, with jsonschema | —              | **44** | 29.4 MiB | 165 in `go list -m all`                          |
+| For comparison, with sigstore-go                                                     | —              | 102    | 33.3 MiB | 428 in `go list -m all`; 104 linked on Windows   |
 
-**sigstore-go is heavy — flagged.** It adds about 59 linked modules: 23 `go-openapi` modules,
-`rekor`, `rekor-tiles/v2` (which imports gRPC), `timestamp-authority`, `go-containerregistry`,
-`in-toto-golang`, `go-tuf/v2`, `certificate-transparency-go`, and OpenTelemetry. Lighter options:
+#### Sigstore verifier measurements
 
-- **Forge-built bundle verifier** on `sigstore/protobuf-specs` v0.5.2 and `transparency-dev/merkle` v0.0.2
-  — measured at 4 linked modules, but it re-implements security-critical checks (certificate chain, SCT,
-  inclusion proof, and checkpoint signatures).
-- **Keyed cosign signatures** checked with standard-library ECDSA — no new modules, but it drops the
-  keyless publisher identities that 0001 requires.
+Measured again on 2026-09-15 with Go 1.27.1: throwaway `linux/amd64` programs (`CGO_ENABLED=0`,
+`-trimpath`) that import only the listed packages, counting the modules
+[`go version -m`](https://pkg.go.dev/cmd/go#hdr-Print_Go_version) reports as compiled into the binary.
 
-Proposed: ship with sigstore-go and evaluate the Forge-built verifier as a follow-up (Open questions).
-OPA is the second-largest addition; gRPC comes in with go-plugin regardless.
+| Import set                                                     | Version  | Modules in the binary | `go list -m all` |
+|----------------------------------------------------------------|----------|-----------------------|------------------|
+| `sigstore-go/pkg/verify`                                       | v1.3.0   | 71                    | 367              |
+| `pkg/verify`, `pkg/bundle`, `pkg/root`, and `pkg/tuf`          | v1.3.0   | 71                    | 367              |
+| `sigstore-go/pkg/bundle`                                       | v1.3.0   | 71                    | 367              |
+| `sigstore-go/pkg/root`                                         | v1.3.0   | 18                    | 209              |
+| `sigstore/protobuf-specs` bundle types (`gen/pb-go/bundle/v1`) | v0.5.2   | 3                     | 128              |
+| `sigstore/sigstore/pkg/signature`                              | v1.10.10 | 11                    | 69               |
+| `transparency-dev/merkle/proof`                                | v0.0.2   | 1                     | 2                |
+| `google/certificate-transparency-go/x509`                      | v1.3.3   | 2                     | 147              |
+
+The 71 are sigstore-go and 70 others, from about 26 upstream projects: 23 `go-openapi` modules (its
+`swag` package ships as many small modules), 7 `golang.org/x`, 6 `sigstore`, 4 gRPC, protobuf, and
+genproto, and 4 OpenTelemetry. The import chains show that most come from service clients rather than
+verification cryptography:
+
+- `pkg/verify` → `pkg/tlog` → the generated Rekor v1 OpenAPI client → `go-openapi/runtime` →
+  OpenTelemetry;
+- `pkg/verify` → `rekor-tiles/v2` protobuf types → gRPC;
+- `pkg/verify` → `sigstore/sigstore/pkg/signature` → `go-containerregistry` (image-name parsing);
+- `pkg/verify` → `certificate-transparency-go/ctutil` → `loglist3` → `k8s.io/klog/v2`;
+- `pkg/verify` → `pkg/root` → `pkg/tuf` → `go-tuf/v2`, even when the trusted root is loaded from a file.
+
+**Decision: verify centrally.** A Forge-built verifier on the small building blocks above would link
+about 4–6 modules (an estimate; that combination is not built), but it would re-implement
+security-critical checks: the Fulcio certificate chain and identity, SCTs, and transparency-log
+inclusion proofs and checkpoints. Instead, `forge-provisioner` verifies publisher signatures with
+sigstore-go when a plugin release is imported ([0011](0011-forge-provisioner.md)), and the agent trusts
+only SHA-256 pins in bundles it has verified with standard-library ECDSA. The trade-off is that agents
+trust the provisioner's environment-issued signing certificate for plugin approval instead of checking
+Sigstore themselves. OPA is now the largest addition; gRPC comes in with go-plugin regardless.
 
 ### Data & storage
 
 Under `/var/lib/forge-agent` (`%ProgramData%\forge-agent` on Windows); every write is atomic (temp file,
 `fsync`, rename):
 
-| Path                  | Owner and mode             | Contents                                                |
-|-----------------------|----------------------------|---------------------------------------------------------|
-| `identity/`           | `forge-agent`, `0700`      | certificate, chain, key or TPM blobs, environment record |
-| `spool/inbox/`        | root:`forge-agent`, `0770` | fetched bundles and CRLs, untrusted                      |
-| `spool/outbox/`       | root:`forge-agent`, `0750` | reports and inventory, capped at 50 MiB, oldest dropped and counted |
-| `state/`              | root, `0700`               | last accepted generation and bundle, handler state       |
-| `plugins/sha256/`     | root, `0555` files         | verified plugin executables and Sigstore bundles         |
+| Path              | Owner and mode             | Contents                                                            |
+|-------------------|----------------------------|---------------------------------------------------------------------|
+| `identity/`       | `forge-agent`, `0700`      | certificate, chain, key or TPM blobs, environment record            |
+| `spool/inbox/`    | root:`forge-agent`, `0770` | fetched bundles and CRLs, untrusted                                 |
+| `spool/outbox/`   | root:`forge-agent`, `0750` | reports and inventory, capped at 50 MiB, oldest dropped and counted |
+| `state/`          | root, `0700`               | last accepted generation and bundle, handler state                  |
+| `plugins/sha256/` | root, `0555` files         | plugin executables whose SHA-256 matches a bundle pin               |
 
 ### Security
 
@@ -198,11 +228,11 @@ Under `/var/lib/forge-agent` (`%ProgramData%\forge-agent` on Windows); every wri
 The four environment values come from enrollment ([CONVENTIONS.md](CONVENTIONS.md#environment)); logs,
 reports, bundles, and plugins are all checked against the recorded ID.
 
-| Behavior                           | `production` / `staging`                  | `test` / `development`    |
-|------------------------------------|-------------------------------------------|---------------------------|
-| File key store when no TPM         | allowed, logged at `warn`                 | allowed                   |
-| Unsigned local plugin (`unsigned-plugins`) | refused in `production` unless overridden | allowed, logged   |
-| Local policy `print`, verbose plans | off                                      | on                        |
+| Behavior                                                 | `production` / `staging`                  | `test` / `development` |
+|----------------------------------------------------------|-------------------------------------------|------------------------|
+| File key store when no TPM                               | allowed, logged at `warn`                 | allowed                |
+| Local plugin not pinned by a bundle (`unpinned-plugins`) | refused in `production` unless overridden | allowed, logged        |
+| Local policy `print`, verbose plans                      | off                                       | on                     |
 
 ### Offline behavior
 
@@ -224,18 +254,16 @@ Telemetry export runs only from `serve`; the executor writes its metrics to the 
 
 Prefix `FORGE_AGENT_`; the gateway client uses `FORGE_AGENT_GATEWAY_*` per 0003.
 
-| YAML                         | Variable                                  | Default                                  |
-|------------------------------|-------------------------------------------|------------------------------------------|
-| `stateDirectory`             | `FORGE_AGENT_STATE_DIRECTORY`             | `/var/lib/forge-agent`                   |
-| `keystore.backend`           | `FORGE_AGENT_KEYSTORE_BACKEND`            | `auto` (`tpm`, `windows-pcp`, `file`)    |
-| `enforce.interval`           | `FORGE_AGENT_ENFORCE_INTERVAL`            | `30m`                                    |
-| `enforce.disabledKinds`      | `FORGE_AGENT_ENFORCE_DISABLED_KINDS`      | empty                                    |
-| `inventory.fullInterval`     | `FORGE_AGENT_INVENTORY_FULL_INTERVAL`     | `6h`                                     |
-| `plugins.trustedRootFile`    | `FORGE_AGENT_PLUGINS_TRUSTED_ROOT_FILE`   | packaged `trusted_root.json`             |
-| `plugins.trustedIdentities`  | YAML only (list of issuer and SAN pattern) | Forge release identity                  |
-| `plugins.privileged`         | YAML only                                 | empty                                    |
-| `plugins.memoryMax`          | `FORGE_AGENT_PLUGINS_MEMORY_MAX`          | `256MiB`                                 |
-| `outbox.maxBytes`            | `FORGE_AGENT_OUTBOX_MAX_BYTES`            | `52428800`                               |
+| YAML                     | Variable                              | Default                               |
+|--------------------------|---------------------------------------|---------------------------------------|
+| `stateDirectory`         | `FORGE_AGENT_STATE_DIRECTORY`         | `/var/lib/forge-agent`                |
+| `keystore.backend`       | `FORGE_AGENT_KEYSTORE_BACKEND`        | `auto` (`tpm`, `windows-pcp`, `file`) |
+| `enforce.interval`       | `FORGE_AGENT_ENFORCE_INTERVAL`        | `30m`                                 |
+| `enforce.disabledKinds`  | `FORGE_AGENT_ENFORCE_DISABLED_KINDS`  | empty                                 |
+| `inventory.fullInterval` | `FORGE_AGENT_INVENTORY_FULL_INTERVAL` | `6h`                                  |
+| `plugins.privileged`     | YAML only                             | empty                                 |
+| `plugins.memoryMax`      | `FORGE_AGENT_PLUGINS_MEMORY_MAX`      | `256MiB`                              |
+| `outbox.maxBytes`        | `FORGE_AGENT_OUTBOX_MAX_BYTES`        | `52428800`                            |
 
 ### Build, release & versioning
 
@@ -243,8 +271,8 @@ Prefix `FORGE_AGENT_`; the gateway client uses `FORGE_AGENT_GATEWAY_*` per 0003.
   the executor as LocalSystem and `serve` as a virtual service account (tier 2); macOS `arm64` with
   launchd (tier 2, file key store). Built with `CGO_ENABLED=0`.
 - **Packaging** — deb, rpm, and apk through [nfpm](https://nfpm.goreleaser.com) v2.47.0 run with
-  `go run`; an MSI for Windows and a pkg for macOS (tooling open). Packages include the units, users, the
-  Sigstore trusted root, and cosign-signed checksums plus the starter's signed SBOM.
+  `go run`; an MSI for Windows and a pkg for macOS (tooling open). Packages include the units, users, and
+  cosign-signed checksums plus the starter's signed SBOM.
 - **Upgrades** — through the OS package manager, which a bundle may drive with a `Package` resource for
   `forge-agent`. The executor applies it last and restarts both units. An agent accepts the current and
   previous bundle `apiVersion`.
@@ -253,7 +281,7 @@ Prefix `FORGE_AGENT_`; the gateway client uses `FORGE_AGENT_GATEWAY_*` per 0003.
 
 - **Enrollment** against `sdktest` with a software TPM simulator where available (unverified choice).
 - **Verification tables** — wrong signer SPIFFE ID, wrong environment, rollback, expired `notAfter`,
-  stale CRL, and a bad plugin digest or identity.
+  stale CRL, and a plugin digest that no accepted bundle pins.
 - **Handlers** — idempotence (a second apply is a no-op) in containers per distribution.
 - **Sandbox and limits** — Tengo escapes, OPA timeouts, plugin memory and pid limits, and crash
   quarantine. Fuzzing, `-race`, and the module allowlist.
@@ -264,9 +292,11 @@ Prefix `FORGE_AGENT_`; the gateway client uses `FORGE_AGENT_GATEWAY_*` per 0003.
   root.
 - **Fully unprivileged agent with sudo rules** — too coarse to express per-resource needs, and hard to
   audit.
-- **Verifying plugin signatures only in the provisioner** — lighter on hosts, but contradicts 0001's
-  "before every launch" requirement.
-- **Forge-built Sigstore verifier or keyed cosign** — see Dependencies.
+- **Verifying Sigstore signatures on every agent** — sigstore-go adds about 59 modules to the agent (102
+  instead of 44), and a Forge-built verifier would re-implement security-critical checks; see
+  [Sigstore verifier measurements](#sigstore-verifier-measurements).
+- **Keyed cosign signatures checked on agents with standard-library ECDSA** — no new modules, but it
+  drops the keyless publisher identities that 0001 requires.
 - **Standard-library-only inventory** — avoids gopsutil's 4 modules, but means per-OS code for Windows
   and macOS.
 - **Direct NCrypt calls instead of certtostore** — avoids `go-ole` and `wmi`, but more Windows code to
@@ -275,9 +305,6 @@ Prefix `FORGE_AGENT_`; the gateway client uses `FORGE_AGENT_GATEWAY_*` per 0003.
 
 ## Open questions
 
-- **Sigstore footprint** — accept sigstore-go's ~59 extra modules, or build a verifier on
-  `protobuf-specs` and `merkle` after a security review?
-- **Trusted root refresh** — ship it with agent packages only (proposed), or run a TUF client?
 - **Plugin distribution** — how binaries reach the host: a gateway-served artifact route, or an OCI
   registry?
 - **CRL delivery** — does `pkg/revocation` accept an offline CRL source, and which route serves the CRL
@@ -295,9 +322,14 @@ Prefix `FORGE_AGENT_`; the gateway client uses `FORGE_AGENT_GATEWAY_*` per 0003.
   `AutoMTLS`, `UnixSocketConfig`; source read at v1.8.0.
 - [sigstore-go](https://github.com/sigstore/sigstore-go) —
   [`verify`](https://pkg.go.dev/github.com/sigstore/sigstore-go/pkg/verify) and
-  [`root`](https://pkg.go.dev/github.com/sigstore/sigstore-go/pkg/root) packages.
-- [sigstore/protobuf-specs](https://github.com/sigstore/protobuf-specs) and
-  [transparency-dev/merkle](https://github.com/transparency-dev/merkle).
+  [`root`](https://pkg.go.dev/github.com/sigstore/sigstore-go/pkg/root) packages — measured, not linked
+  by the agent.
+- [sigstore/protobuf-specs](https://github.com/sigstore/protobuf-specs),
+  [transparency-dev/merkle](https://github.com/transparency-dev/merkle),
+  [sigstore/sigstore](https://github.com/sigstore/sigstore), and
+  [certificate-transparency-go](https://github.com/google/certificate-transparency-go) — measured building
+  blocks.
+- [`go version -m`](https://pkg.go.dev/cmd/go#hdr-Print_Go_version) — module list compiled into a binary.
 - [Sigstore cosign](https://docs.sigstore.dev/cosign/signing/overview/).
 - [OPA `v1/rego`](https://pkg.go.dev/github.com/open-policy-agent/opa/v1/rego) and
   [Tengo](https://github.com/d5/tengo).
