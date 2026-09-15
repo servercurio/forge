@@ -1,3 +1,7 @@
+<!--
+  ~ SPDX-License-Identifier: Apache-2.0
+-->
+
 # 0014 — forge-agent-plugins
 
 - **Status:** Draft
