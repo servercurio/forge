@@ -15,6 +15,7 @@ alternatives considered, and tracks its status as the decision matures.
 | [0002](0002-forge-api-schema.md)     | forge-api-schema     | Draft  | 2026-09-15 |
 | [0003](0003-forge-sdk.md)            | forge-sdk            | Draft  | 2026-09-15 |
 | [0004](0004-forge-common.md)         | forge-common         | Draft  | 2026-09-15 |
+| [0005](0005-forge-infrastructure.md) | forge-infrastructure | Draft  | 2026-09-15 |
 
 ## Statuses
 
