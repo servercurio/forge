@@ -1,3 +1,7 @@
+<!--
+  ~ SPDX-License-Identifier: Apache-2.0
+-->
+
 # Design document conventions
 
 Cross-cutting conventions for the per-repository design documents that follow
@@ -150,6 +154,22 @@ Forge deploys to Kubernetes, Docker/Podman hosts, and supported operating system
 Quadlet units and Compose files are rendered by `forge-infrastructure` roles, not kept in service
 repositories. Configuration, health probes, and enrollment behave the same on every target; only the
 credential for first enrollment differs (a single-use token file, or a projected service account token).
+
+## License headers
+
+Per [0001](0001-project-repositories.md#license-headers-and-license-files):
+
+- Every tracked file starts with `SPDX-License-Identifier: Apache-2.0` in its comment syntax, and
+  `LICENSE` sits at the repository root. `.licenserc.yaml` (license-eye v0.9.0) is the single policy file.
+- Comment styles that `license-eye header fix` does not infer are pinned in `.licenserc.yaml`: `go.mod`
+  uses `//`, `CODEOWNERS` and `.helmignore` use `#`, and Helm templates (`*.tpl`, `NOTES.txt`) start with
+  `{{- /* SPDX-License-Identifier: Apache-2.0 */ -}}`, added by hand.
+- `paths-ignore` lists only files that cannot hold a comment: `LICENSE`, `**/go.sum`, `**/*.json`,
+  `**/.gitkeep`, and embedded data such as `**/version/version.txt`.
+- Generators write the header themselves (for example `openapi-gen` for YAML output); generated JSON is
+  ignored.
+- `task lint` runs the check and `task license:fix` adds missing headers; CI runs
+  `800-call-license-headers.yaml` from the 200 and 300 flows.
 
 ## Dependencies, build, and release
 
