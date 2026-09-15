@@ -1,0 +1,385 @@
+<!--
+  ~ SPDX-License-Identifier: Apache-2.0
+-->
+
+# 0010 — forge-cli
+
+- **Status:** Draft
+- **Owner:** Nathan Klick
+- **Date:** 2026-09-15
+- **Summary:** `forge-cli` is the operator CLI, a cobra command tree over `forge-sdk`. Each profile pins an
+  environment ID and CA bundle and verifies the gateway before any credential is sent. Login uses the
+  OAuth 2.0 device authorization grant against `forge-sso`, subject to 0007. Credentials live in the OS
+  keychain, with an explicit, tier-gated file fallback. Output is plain, color-independent, and available
+  as table, JSON, or YAML.
+
+> An initial draft with concrete proposals, bounded by the
+> [Resolved decisions](0001-project-repositories.md#resolved-decisions) in 0001. Conventions other
+> repositories depend on are summarized in [CONVENTIONS.md](CONVENTIONS.md).
+
+## Context & goals
+
+0001 defines `forge-cli` as the operator CLI that talks to the gateway through `forge-sdk`
+([Repository inventory](0001-project-repositories.md#repository-inventory)). Operators create single-use
+agent enrollment tokens with it, valid for 1 hour by default and at most 24 hours
+([Agent enrollment](0001-project-repositories.md#agent-enrollment)). Each profile "pins an environment ID
+and CA bundle and verifies the gateway before sending credentials"
+([Environment identity](0001-project-repositories.md#environment-identity)), and the CLI, like every
+component, must know its environment
+([Environment awareness](0001-project-repositories.md#environment-awareness)).
+0003 leaves interactive login and profile files to this document and [0007](0007-forge-sso.md).
+
+**Goals**
+
+- A predictable, scriptable command tree for the first domain slice and the auth spine.
+- No credential ever sent to an unverified or wrong environment.
+- Secure credential storage by default, with explicit trade-offs when that is unavailable.
+- Output that works for people, screen readers, and scripts alike.
+
+**Non-goals**
+
+- Implementing API clients, TLS, or revocation — `forge-sdk` ([0003](0003-forge-sdk.md)).
+- Deciding the login protocol and token lifetimes — [0007](0007-forge-sso.md) and
+  [0006](0006-forge-identity.md).
+- Agent enrollment on hosts — `forge-agent` ([0012](0012-forge-agent.md)).
+- A terminal UI or interactive shell.
+
+## Proposal
+
+### Responsibilities
+
+- **Profiles** — create, verify, select, and remove environment profiles.
+- **Session** — log in, refresh, log out, and show the current principal.
+- **Resource commands** — thin wrappers over `forge-sdk` operations with consistent flags and output.
+- **Enrollment tokens** — creation and handling of single-use agent tokens.
+- **Shell integration** — completion scripts and stable exit codes.
+
+### Interfaces
+
+#### Command tree
+
+The binary is `forge-cli`, per CONVENTIONS. Commands are noun-then-verb:
+
+```
+forge-cli
+├── profile           add NAME | list | show [NAME] | use NAME | verify [NAME] | remove NAME
+├── login             [--no-browser]                  device authorization grant (0007 decides)
+├── logout            [--all]                         revoke and delete stored credentials
+├── whoami                                            principal, tenant, roles, environment
+├── endpoint          list | get ID | create -f FILE | update ID -f FILE
+│                     | label ID KEY=VALUE… KEY-… | retire ID | facts ID | history ID
+├── endpoint-class    list | get NAME | apply -f FILE | delete NAME
+├── enrollment-token  create | list | revoke ID
+├── agent             list | get ID | revoke ID      (forge-identity)
+├── api-token         create | list | revoke ID      (forge-identity)
+├── completion        bash | zsh | fish | powershell
+└── version
+```
+
+- **Global flags** — `--profile`, `-o/--output table|json|yaml`, `--no-color`, `--quiet`, `--timeout`,
+  `--log-level`, and `--yes`.
+- **Lists** follow `nextCursor` automatically through `forge-sdk`'s `pagination.All`; `--limit` caps the
+  total.
+- **`forge-sdk` only.** API calls go only through `forge-sdk`'s generated clients. The single exception is
+  the OAuth exchange, which uses the SDK's pinned `*http.Client` (see Login).
+- **Later commands** — provisioner commands arrive with [0011](0011-forge-provisioner.md).
+
+#### Profiles
+
+Profiles live in `<os.UserConfigDir()>/forge/profiles.yaml`: `$XDG_CONFIG_HOME` or `~/.config` on Unix,
+`~/Library/Application Support` on macOS, and `%AppData%` on Windows.
+
+```yaml
+current: qa-east
+profiles:
+  qa-east:
+    gatewayUrl: https://gateway.qa-east.example.net:8443
+    environment:
+      id: q3fz7k2m5x4c6r3t6y5b7n2w7a          # pinned by the operator, never learned
+      caBundle: ca/qa-east.pem                 # relative to the config directory
+      caBundleSha256: 9f86d081884c7d65…        # detects later edits to the file
+      name: qa-east                            # recorded by `profile verify`
+      tier: staging                            # recorded by `profile verify`
+    credentialStore: keychain
+```
+
+- **`profile add`** requires `--gateway`, `--environment-id`, and either `--ca-bundle FILE` or
+  `--ca-sha256 HASH`. With a hash, the CLI fetches the chain during the handshake, accepts it only if a
+  root's SHA-256 matches, as agent enrollment does, and saves the bundle.
+- **`profile verify`** runs automatically on `add`. It connects through `forge-sdk` `client.New` with
+  `WithEnvironment(id, roots)`, which requires the chain to reach the pinned roots and the certificate to
+  carry `spiffe://<id>/service/forge-gateway`. It then calls `GET /gateway/v1alpha1/environment` without
+  credentials ([0008](0008-forge-gateway.md)) and records `name` and `tier`. A later name or tier mismatch
+  stops every command until the operator runs `profile verify` again.
+- **Permissions** — the directory is `0700` and files are `0600`. The CLI refuses a profile or credential
+  file that is group- or world-writable, as OpenSSH does.
+- **CI profile** — without a file, `FORGE_CLI_GATEWAY_URL`, `FORGE_CLI_ENVIRONMENT_ID`,
+  `FORGE_CLI_ENVIRONMENT_CA_BUNDLE`, and `FORGE_CLI_GATEWAY_TOKEN_FILE` form an ephemeral profile.
+
+#### Login
+
+Proposed for [0007](0007-forge-sso.md) to accept or replace: **the OAuth 2.0 device authorization grant**
+([RFC 8628](https://www.rfc-editor.org/rfc/rfc8628)), with `forge-cli` as a public client.
+
+1. After `profile verify`, the CLI POSTs to `/sso/oauth2/device-authorization` on the gateway's operator
+   ingress. The request uses the environment-pinned connection, and the gateway forwards it to `forge-sso`.
+2. It prints the `verification_uri` and `user_code` to stderr and opens a browser unless `--no-browser` is
+   set or no display is available. The user confirms the environment name that `forge-sso` shows next to
+   the code, which mitigates RFC 8628's remote-phishing risk (§5.4).
+3. It polls `/sso/oauth2/token` at the server's `interval`, handling `slow_down`, until approval, denial,
+   or expiry.
+4. It stores the access token and refresh token under a key bound to the environment ID (below).
+
+Implementation: `golang.org/x/oauth2` v0.37.0's `Config.DeviceAuth` and `Config.DeviceAccessToken`,
+verified present. The SDK's pinned `*http.Client` is passed through the `oauth2.HTTPClient` context value,
+which requires `forge-sdk` to expose that client. Refresh tokens should rotate on use, as
+[RFC 9700](https://www.rfc-editor.org/rfc/rfc9700) recommends for public clients. CI uses API tokens from
+`FORGE_CLI_GATEWAY_TOKEN_FILE`, never from flags or variable values.
+
+#### Credential storage
+
+Entries are keyed `forge-cli/<environment-id>/<profile>`. Before attaching a token, the CLI checks that
+`client.PeerEnvironment()` equals the entry's environment ID, so a renamed or edited profile cannot send
+one environment's token to another.
+
+| Store                | Protection                                    | Trade-offs                                  |
+|----------------------|-----------------------------------------------|---------------------------------------------|
+| `keychain` (default) | encrypted at rest, unlocked with the OS login | needs a desktop session; size limits        |
+| `file` (explicit)    | `0600` file, plaintext                        | any process running as the user can read it |
+
+- **Library** — [`zalando/go-keyring`](https://github.com/zalando/go-keyring) v0.2.8, pure Go without cgo:
+  - **macOS** — runs `/usr/bin/security -i` and writes the secret to its standard input, so it never
+    appears in process arguments (verified in `keyring_darwin.go`). Whether items created by that tool can
+    be read by any other process that invokes it without a prompt is **unverified**.
+  - **Linux** — Secret Service over D-Bus (`godbus/dbus/v5`). Headless hosts usually lack a keyring daemon.
+  - **Windows** — Credential Manager (`danieljoos/wincred`), limited to 2560-byte secrets, so the access
+    and refresh tokens are stored as separate entries.
+- **No silent fallback.** Unlike `gh`, which falls back to a plaintext file when no credential store is
+  found, `forge-cli` fails with an explanation. The operator must choose `--credential-store file`, which
+  calls `AllowLastResort("plaintext-credential-file")`, refused in `production` unless listed in
+  `FORGE_CLI_ENVIRONMENT_OVERRIDES`.
+- **Logout** revokes the refresh token at `/sso/oauth2/revoke`, then deletes the entries even if
+  revocation fails, and says so.
+
+#### Enrollment tokens
+
+```
+$ forge-cli enrollment-token create --tenant acme --label site=dc1 --ttl 4h --output-file token.txt
+enrollment token created
+  id:          c4d6f2h3j5k7
+  tenant:      acme
+  labels:      site=dc1
+  expires:     2026-09-15T16:00:00Z (in 4 hours)
+  single use:  yes
+  written to:  token.txt (mode 0600)
+```
+
+- **Validation** — `--ttl` defaults to `1h`, and the CLI rejects anything over `24h` before calling
+  `forge-identity`, which remains authoritative. `--count N` (at most 100) creates N tokens, one per host.
+- **Token handling** — the token value, marked `x-forge-sensitive`, is written only to `--output-file`
+  (`0600`, refusing to overwrite) or to stdout when stdout is not a terminal. On a terminal it is printed
+  only with `--show-token`, so it does not land in scrollback by accident.
+- **`list`** shows metadata and use status, never token values. `revoke` invalidates an unused token.
+- **Hardened tiers** — `--count` above 1 requires confirmation.
+
+#### Output formats
+
+- **`table`** (default) — `text/tabwriter` columns with a header row, ASCII only, and no box drawing.
+  Timestamps are RFC 3339 UTC, followed by a relative time in parentheses.
+- **`json`** — the API's JSON unchanged (lowerCamelCase); a list is a JSON array after pagination. Stable
+  for scripts.
+- **`yaml`** — the same document as YAML.
+- **Streams** — results go to stdout; prompts, progress, warnings, and errors go to stderr.
+- **Errors** — `error: endpoint_not_found: Endpoint "web-01" was not found (trace 4bf92f35…)`, using the
+  problem `code` and `traceId` from `*problem.Error`.
+
+| Exit | Meaning                                     | Exit | Meaning                                  |
+|------|---------------------------------------------|------|------------------------------------------|
+| 0    | success                                     | 5    | not found (404)                          |
+| 1    | other error                                 | 6    | conflict or precondition (409, 412)      |
+| 2    | usage error                                 | 7    | unavailable after retries (429, 5xx)     |
+| 3    | not authenticated (401) or login required   | 8    | environment verification failed          |
+| 4    | forbidden (403)                             |      |                                          |
+
+#### Accessibility
+
+- **Never color alone.** Every status is a word (`ok`, `failed`, `revoked`, `expired`), and color, if any,
+  only repeats it.
+- **Color off** when `NO_COLOR` is present and not empty ([no-color.org](https://no-color.org/)), with
+  `--no-color`, when `TERM=dumb`, or when the stream is not a terminal (detected with `mattn/go-isatty`).
+- **No animation** — no spinners or cursor tricks when stderr is not a terminal or with `--quiet`.
+  Progress is a line of text such as `waiting for approval (expires in 9m)`, updated at most every 30
+  seconds.
+- **Readable prompts** — confirmations state the action and environment in words, e.g.
+  `Retire endpoint web-01 in qa-east (staging)? Type the environment name to confirm:`. They never depend
+  on arrow-key menus.
+- **Script and assistive use** — `-o json` gives structured output for screen-reader tooling and scripts,
+  and help text avoids emoji and ASCII art.
+
+#### Shell completion
+
+Cobra's built-in `completion` command generates bash, zsh, fish, and PowerShell scripts. Profile names,
+output formats, and label keys from the local profile complete offline. Remote completion of resource IDs
+is opt-in (`FORGE_CLI_COMPLETION_REMOTE=true`). It uses only already-stored credentials for a verified
+profile, never starts a login, and times out after 2 seconds.
+
+### Dependencies
+
+- **Forge** — `forge-sdk` (clients, `problem`, `pagination`), `forge-common` (`logging`, `environment`,
+  `telemetry`), and `forge-api-schema` models, through the SDK.
+- **Kept from the starter** — `spf13/cobra` v1.10.2 (links `spf13/pflag`, plus
+  `inconshreveable/mousetrap` on Windows), zerolog, `errorx`, and `yaml.v3`.
+- **New** — `golang.org/x/oauth2` v0.37.0, which links only itself; its `go.mod` also names
+  `cloud.google.com/go/compute/metadata`, which is not linked. Also `zalando/go-keyring` v0.2.8.
+- **Removed from the starter** — `internal/database` (pgx, bun, goose) and `internal/pool`
+  (`panjf2000/ants/v2`).
+- **Measured footprint** — the proposed set plus `forge-common`'s OpenTelemetry stack links 23 third-party
+  modules on darwin, 24 on linux (`godbus/dbus/v5`), and 25 on windows (`wincred`, `mousetrap`), with 51 in
+  `go list -m all`.
+
+### Data & storage
+
+- **Profiles and CA bundles** — under the user config directory.
+- **Credentials** — in the chosen store.
+- **Nothing else.** No cache of API data is kept on disk.
+
+### Security
+
+- **Verify before credentials.** Every command that uses credentials first builds the pinned
+  `forge-sdk` client. No flag skips verification, and there is no `--insecure`.
+- **Secrets stay out of argv and history.** Secrets are never accepted as flag values: token inputs use
+  `...File` flags or stdin (`--token-file -`). Debug logs redact `Authorization` and every
+  `x-forge-sensitive` field, via the SDK's `String()` methods.
+- **Destructive commands** (`retire`, `delete`, `revoke`, `logout --all`) prompt in `production` and
+  `staging`. Without a terminal they require `--yes`, and they fail rather than hang.
+- **Supply chain** — releases ship cosign-signed binaries and the starters' signed CycloneDX SBOMs.
+  `version --verbose` prints the module version and the `forge-sdk` schema version.
+
+### Environment awareness
+
+- **Where the environment comes from** — the CLI runs on an operator's workstation, so its environment is
+  the target profile's. `id` and `caBundle` are pinned at `profile add`; `name` and `tier` are recorded by
+  `profile verify`.
+- **No profile, no network** — commands other than `version`, `completion`, `help`, and `profile` refuse
+  to run without a verified profile. This satisfies CONVENTIONS' requirement that `name` and `tier` be
+  present.
+- **Tier behavior** — `production` and `staging` (`Hardened()`): confirmation prompts, the file credential
+  store gated as above, and the environment's name and tier printed to stderr before any mutating command.
+  In `development`, prompts are skipped.
+
+### Logging & telemetry
+
+- **Logs** — diagnostics go to **stderr**, at `warn` by default, in console format on a terminal and JSON
+  otherwise (or `--log-format json`). Fields follow CONVENTIONS. Command output never goes through the
+  logger.
+- **Telemetry export** is off by default (`FORGE_CLI_TELEMETRY_ENABLED=false`); a CLI should not phone home.
+  Trace context still propagates: `forge-common`'s `WrapTransport` adds `traceparent`, and errors print the
+  server's `traceId`.
+
+### Configuration
+
+Prefix `FORGE_CLI_`. Precedence is defaults → config file → variables → flags, as in the starter. The
+profile supplies the `environment` and `gateway` blocks.
+
+| YAML                     | Variable                             | Default              |
+|--------------------------|--------------------------------------|----------------------|
+| `profile`                | `FORGE_CLI_PROFILE`                  | `current` in profiles |
+| `output`                 | `FORGE_CLI_OUTPUT`                   | `table`              |
+| `credentialStore`        | `FORGE_CLI_CREDENTIAL_STORE`         | `keychain`           |
+| `gateway.url`            | `FORGE_CLI_GATEWAY_URL`              | from profile         |
+| `gateway.tokenFile`      | `FORGE_CLI_GATEWAY_TOKEN_FILE`       | empty                |
+| `gateway.timeout`        | `FORGE_CLI_GATEWAY_TIMEOUT`          | `30s`                |
+| `environment.id`         | `FORGE_CLI_ENVIRONMENT_ID`           | from profile         |
+| `environment.caBundle`   | `FORGE_CLI_ENVIRONMENT_CA_BUNDLE`    | from profile         |
+| `environment.overrides`  | `FORGE_CLI_ENVIRONMENT_OVERRIDES`    | empty                |
+| `logging.default.level`  | `FORGE_CLI_LOG_LEVEL`                | `warn`               |
+| `telemetry.enabled`      | `FORGE_CLI_TELEMETRY_ENABLED`        | `false`              |
+| `completion.remote`      | `FORGE_CLI_COMPLETION_REMOTE`        | `false`              |
+
+### Build, release & versioning
+
+- **Bootstrap** from `go-cli-starter`: keep `internal/cli` and `internal/config`, remove `serve`, `copy`,
+  the database, and the pool. The binary is `cmd/forge-cli`.
+- **Release artifacts** — macOS, Linux, and Windows binaries for amd64 and arm64, built with
+  `CGO_ENABLED=0`, each with a cosign signature, SBOM, and checksum. Completion scripts and man pages are
+  generated at release time in a nested `tools` module, keeping `cobra/doc`'s dependencies out of the
+  binary (not measured).
+- **Versioning** — `v0.x`. Command names, flags, JSON output, and exit codes are the CLI's compatibility
+  surface; a change to them is breaking.
+
+### Testing
+
+- **Golden tests** — output for each format, including runs with `NO_COLOR=1`, `TERM=dumb`, and non-TTY
+  streams. One test asserts no ANSI escapes in those cases.
+- **Environment pinning** — against `forge-sdk` `sdktest` gateways: wrong CA, wrong trust domain, wrong
+  SPIFFE path, a mismatched `--ca-sha256`, and a tier change after verification. None may transmit a token
+  (the test server fails on any `Authorization` header).
+- **Login** — a fake device-authorization server covering `authorization_pending`, `slow_down`,
+  `expired_token`, and `access_denied`.
+- **Credentials** — `keyring.MockInit()` for the store, file-permission refusal tests, and the
+  `production` gate on `file`.
+- **Commands** — table tests for exit codes mapped from problem statuses; `-race` throughout.
+
+## Alternatives considered
+
+- **Authorization code with PKCE and a loopback redirect** ([RFC 8252](https://www.rfc-editor.org/rfc/rfc8252)
+  §7.3, [RFC 7636](https://www.rfc-editor.org/rfc/rfc7636)) — resists relayed-code phishing better, but
+  needs a browser on the same machine and fails over SSH. A candidate for 0007 to offer alongside the
+  device grant.
+- **A hand-written RFC 8628 client** — zero modules instead of one, but more security-sensitive code to
+  maintain.
+- **Device flow in `forge-sdk` `pkg/auth`** — reusable by third parties, but 0003 places interactive login
+  out of scope.
+- **Silent plaintext fallback, as `gh` does** — convenient on headless hosts, but it quietly weakens
+  storage on exactly the machines least likely to be watched.
+- **[`99designs/keyring`](https://github.com/99designs/keyring)** — more backends, including an encrypted
+  file (not measured here).
+- **Verb-noun commands** (`kubectl get endpoints`) — familiar to Kubernetes users, but noun-verb groups
+  help text and completion by resource.
+- **A binary named `forge`** — shorter to type, but deviates from CONVENTIONS' rule that binaries take the
+  repository name ([Go modules and layout](CONVENTIONS.md#go-modules-and-layout)). Distributions could
+  ship an alias (see Open questions).
+- **Logging to stdout as JSON lines** — CONVENTIONS' default
+  ([Logging and telemetry](CONVENTIONS.md#logging-and-telemetry)). **This document deviates:** a CLI's
+  stdout is its output, so logs go to stderr, at `warn`.
+- **`golang.org/x/term`** v0.46.0 for terminal detection — adds `x/term`, while `mattn/go-isatty` is already
+  linked through zerolog.
+
+## Open questions
+
+- **Login protocol** — device grant, loopback PKCE, or both? Are token endpoints behind the gateway's
+  `/sso/` routes ([0007](0007-forge-sso.md), [0008](0008-forge-gateway.md))?
+- **SDK surface** — can `forge-sdk` expose its pinned `*http.Client` and a `--ca-sha256` bootstrap helper
+  shared with `enroll`?
+- **Sender-constrained tokens** — should CLI tokens use DPoP ([RFC 9449](https://www.rfc-editor.org/rfc/rfc9449))
+  so a stolen refresh token cannot be replayed elsewhere?
+- **Binary name** — `forge-cli` per convention, or an official `forge` alias?
+- **macOS keychain access control** — do items stored through `/usr/bin/security` need a native-API backend
+  to restrict which applications can read them?
+- **Multi-tenant principals** — should profiles carry a default tenant, or must commands name one?
+- **Man pages and localization** — in scope for the first release?
+
+## References
+
+- [0001 — Project Repositories](0001-project-repositories.md) — CLI role, agent enrollment, environment
+  identity and awareness.
+- [0003 — forge-sdk](0003-forge-sdk.md), [0004 — forge-common](0004-forge-common.md),
+  [0008 — forge-gateway](0008-forge-gateway.md), [0009 — forge-inventory](0009-forge-inventory.md),
+  [CONVENTIONS.md](CONVENTIONS.md).
+- [go-cli-starter](https://github.com/servercurio/go-cli-starter) — `internal/cli/root.go` (flag overlay,
+  `completion` bypass) and `go.mod`.
+- [cobra](https://github.com/spf13/cobra) — shell completion.
+- [`golang.org/x/oauth2`](https://pkg.go.dev/golang.org/x/oauth2) — `DeviceAuth`, `DeviceAccessToken`.
+- [zalando/go-keyring](https://github.com/zalando/go-keyring) — backends and size limits (v0.2.8 source).
+- [`os.UserConfigDir`](https://pkg.go.dev/os#UserConfigDir).
+- [RFC 8628](https://www.rfc-editor.org/rfc/rfc8628) — OAuth 2.0 Device Authorization Grant (§5.4 remote
+  phishing).
+- [RFC 8252](https://www.rfc-editor.org/rfc/rfc8252) — OAuth for native apps;
+  [RFC 7636](https://www.rfc-editor.org/rfc/rfc7636) — PKCE;
+  [RFC 9700](https://www.rfc-editor.org/rfc/rfc9700) — OAuth 2.0 security best current practice;
+  [RFC 9449](https://www.rfc-editor.org/rfc/rfc9449) — DPoP.
+- [NO_COLOR](https://no-color.org/) — color opt-out convention.
+- [GitHub CLI `gh auth login`](https://cli.github.com/manual/gh_auth_login) — credential-store fallback and
+  `--insecure-storage`.
+- [Sigstore cosign](https://docs.sigstore.dev/cosign/signing/overview/) — binary signing.
+- [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) — problem details used in error output.
