@@ -162,8 +162,12 @@ Per [0001](0001-project-repositories.md#license-headers-and-license-files):
 - Every tracked file starts with `SPDX-License-Identifier: Apache-2.0` in its comment syntax, and
   `LICENSE` sits at the repository root. `.licenserc.yaml` (license-eye v0.9.0) is the single policy file.
 - Comment styles that `license-eye header fix` does not infer are pinned in `.licenserc.yaml`: `go.mod`
-  uses `//`, `CODEOWNERS` and `.helmignore` use `#`, and Helm templates (`*.tpl`, `NOTES.txt`) start with
-  `{{- /* SPDX-License-Identifier: Apache-2.0 */ -}}`, added by hand.
+  uses `//`, and `CODEOWNERS` and `.helmignore` use `#`.
+- Every file under `charts/*/templates/` starts with `{{- /* SPDX-License-Identifier: Apache-2.0 */ -}}`,
+  added by hand, so a disabled template renders nothing; a `#` header outside `{{- if }}` leaves a
+  comment-only manifest that fails `helm install`. license-eye accepts any comment style there, so
+  `.licenserc.yaml` checks templates in a separate block and the License Headers workflow and
+  `task lint` also verify each template's first line.
 - `paths-ignore` lists only files that cannot hold a comment: `LICENSE`, `**/go.sum`, `**/*.json`,
   `**/.gitkeep`, and embedded data such as `**/version/version.txt`.
 - Generators write the header themselves (for example `openapi-gen` for YAML output); generated JSON is
