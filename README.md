@@ -22,6 +22,7 @@ this foundation.
 - `CODE_OF_CONDUCT.md` — community standards
 - `.github/workflows/` — CI; PR-title formatting and SPDX license-header checks
 - `.licenserc.yaml` — license-header policy for license-eye
+- `Taskfile.yaml` — repository checks (`task lint:license`, run by CI)
 - `.github/CODEOWNERS` — review routing
 - `.gitignore` — Hugo / Node / editor / OS ignore rules
 - `docs/design/` — design documents and RFCs (numeric-prefix series)

@@ -413,8 +413,9 @@ seeded from — carries an Apache-2.0 `LICENSE` file at its root, and every trac
   `LICENSE` and version history, not by each file.
 - **Enforced** — [license-eye](https://github.com/apache/skywalking-eyes) (`header check`, configured by
   `.licenserc.yaml`) runs on every pull request and on `main` through an `800-call-license-headers`
-  reusable workflow, so a missing header fails the build. It is installed with `go install` at a pinned
-  version rather than through its GitHub Action, which references other actions by tag.
+  reusable workflow, so a missing header fails the build. That workflow runs `task lint:license`, which
+  installs license-eye with `go install` at the version pinned once in `Taskfile.yaml`, rather than
+  through its GitHub Action, which references other actions by tag.
 - **Exceptions** — only files that cannot hold a comment (`LICENSE`, JSON, `go.sum`, `.gitkeep`, and
   embedded data such as version strings) are listed in `.licenserc.yaml`.
 - **Generated files** — generators emit the header themselves, so regenerating never fails the check.
