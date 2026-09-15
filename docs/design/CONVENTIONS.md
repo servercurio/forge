@@ -160,20 +160,22 @@ credential for first enrollment differs (a single-use token file, or a projected
 Per [0001](0001-project-repositories.md#license-headers-and-license-files):
 
 - Every tracked file starts with `SPDX-License-Identifier: Apache-2.0` in its comment syntax, and
-  `LICENSE` sits at the repository root. `.licenserc.yaml` (license-eye v0.9.0) is the single policy file.
+  `LICENSE` sits at the repository root. `.licenserc.yaml` is the single policy file, and
+  `LICENSE_EYE_VERSION` in `Taskfile.yaml` is the only place the license-eye version is pinned.
 - Comment styles that `license-eye header fix` does not infer are pinned in `.licenserc.yaml`: `go.mod`
   uses `//`, and `CODEOWNERS` and `.helmignore` use `#`.
 - Every file under `charts/*/templates/` starts with `{{- /* SPDX-License-Identifier: Apache-2.0 */ -}}`,
   added by hand, so a disabled template renders nothing; a `#` header outside `{{- if }}` leaves a
   comment-only manifest that fails `helm install`. license-eye accepts any comment style there, so
-  `.licenserc.yaml` checks templates in a separate block and the License Headers workflow and
-  `task lint` also verify each template's first line.
+  `.licenserc.yaml` checks templates in a separate block and `task lint:license` also verifies each
+  template's first line.
 - `paths-ignore` lists only files that cannot hold a comment: `LICENSE`, `**/go.sum`, `**/*.json`,
   `**/.gitkeep`, and embedded data such as `**/version/version.txt`.
 - Generators write the header themselves (for example `openapi-gen` for YAML output); generated JSON is
   ignored.
-- `task lint` runs the check and `task license:fix` adds missing headers; CI runs
-  `800-call-license-headers.yaml` from the 200 and 300 flows.
+- CI's `800-call-license-headers.yaml`, called from the 200 and 300 flows, installs Task and runs
+  `task lint:license`, the same task developers run; `task lint` includes it and `task license:fix`
+  adds missing headers.
 
 ## Dependencies, build, and release
 
