@@ -279,6 +279,9 @@ Ansible project rather than a Go project, and it does not depend on `forge-agent
 - **Execution** — [Conftest](https://www.conftest.dev) evaluates the OPA policies in pull-request CI; a
   dedicated control node (e.g. [AWX](https://github.com/ansible/awx)) runs the merged playbooks, so
   deployment credentials never live in CI.
+- **Service enrollment** — the control node holds its own environment certificate and delivers
+  single-use service enrollment tokens to each service it deploys; see
+  [Environment identity](#environment-identity).
 
 Deploying Forge with Ansible keeps the two axes fully separate: Forge does not depend on its own agent
 or provisioner to deploy itself.
@@ -337,6 +340,13 @@ deployment:
   environment. Forge uses the SPIFFE ID format without running SPIRE.
 - **Service-to-service** — all internal calls between Forge services use mutual TLS with these
   certificates, issued by the environment's intermediate CA in `forge-identity`.
+- **Service certificate bootstrap** — when an environment is created, a key ceremony uses the offline
+  root CA to sign `forge-identity`'s intermediate CA and the `forge-infrastructure` control node's
+  certificate; `forge-identity` then issues its own service certificate from the intermediate. For every
+  other service instance, the control node requests a single-use service enrollment token from
+  `forge-identity` and delivers it through Ansible, and the service enrolls with a CSR exactly as an
+  agent does. Service certificates last 7 days and renew automatically at two-thirds of their lifetime,
+  with the same OCSP and CRL checks as agent certificates.
 - **Agents and plugins** — the enrollment token carries the environment ID, and the agent checks it
   against the gateway's certificate before enrolling. The agent passes its environment ID to plugins,
   which refuse to serve an agent from a different environment.
@@ -417,6 +427,10 @@ Answers to this document's earlier open questions (2026-09-14 to 2026-09-15). Th
   as a SPIFFE ID in every Forge certificate. Service-to-service mTLS, agents and plugins, user and API
   tokens, `forge-cli`, and `forge-infrastructure` all verify it. See
   [Environment identity](#environment-identity).
+- **Service certificate bootstrap** — An environment-creation key ceremony signs `forge-identity`'s
+  intermediate CA and the control node's certificate from the offline root; every other service enrolls
+  with a single-use service token delivered by Ansible. Service certificates last 7 days and renew
+  automatically.
 - **Plugin transport** — gRPC through `hashicorp/go-plugin`, which handles the handshake, process
   lifecycle, and optional mutual TLS.
 - **Plugin signing** — Sigstore (cosign) signatures verified against trusted publisher identities, plus
@@ -424,9 +438,8 @@ Answers to this document's earlier open questions (2026-09-14 to 2026-09-15). Th
 
 ## Open questions
 
-- **Service certificate bootstrap** — how each Forge service, including `forge-identity` itself, obtains
-  its first environment certificate before `forge-identity` can issue one (e.g. provisioned by
-  `forge-infrastructure` from the offline root).
+None at present. Answered questions are recorded under
+[Resolved decisions](#resolved-decisions).
 
 ## References
 
