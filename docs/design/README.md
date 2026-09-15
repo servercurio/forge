@@ -21,6 +21,11 @@ alternatives considered, and tracks its status as the decision matures.
 - **Superseded** — replaced by a later document; link it (`Superseded by [NNNN](NNNN-slug.md)`).
 - **Withdrawn** — abandoned without adoption; kept for the record.
 
+## Conventions
+
+[`CONVENTIONS.md`](CONVENTIONS.md) collects the cross-cutting conventions — API style, SPIFFE IDs,
+configuration, logging fields, and dependency rules — that the per-repository documents share.
+
 ## Adding a design doc
 
 1. Pick the next unused number and copy [`TEMPLATE.md`](TEMPLATE.md) to `NNNN-<kebab-slug>.md`.
