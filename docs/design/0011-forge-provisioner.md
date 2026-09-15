@@ -1,3 +1,7 @@
+<!--
+  ~ SPDX-License-Identifier: Apache-2.0
+-->
+
 # 0011 — forge-provisioner
 
 - **Status:** Draft
