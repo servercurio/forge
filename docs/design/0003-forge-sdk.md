@@ -50,8 +50,9 @@ and certificates renew at two-thirds of their lifetime with OCSP and CRL checks
   telemetry.
 - **Environment identity** — SPIFFE ID parsing and matching, mutual-TLS `tls.Config` builders, and OCSP
   and CRL revocation checks.
-- **Enrollment and renewal** — enrollment token parsing, first-contact verification, CSR submission, and
-  renewal at two-thirds of the lifetime.
+- **Enrollment and renewal** — enrollment token parsing, service account token credentials for
+  services on Kubernetes, first-contact verification, CSR submission, and renewal at two-thirds of the
+  lifetime.
 - **Errors and pagination** — problem-details errors and pagination iterators.
 
 ### Interfaces
@@ -71,7 +72,7 @@ forge-sdk/
 │   ├── spiffe/                  # ID, Parse, Matcher (Service, Agent, ControlNode), FromCertificate
 │   ├── tlsconfig/               # Client(opts), Server(opts), CertificateSource
 │   ├── revocation/              # Checker: OCSP, then CRL, cached until nextUpdate, fails closed
-│   ├── enroll/                  # ParseToken, Enroll, KeyStore, FileKeyStore, Renewer
+│   ├── enroll/                  # ParseToken, Credential, Enroll, KeyStore, FileKeyStore, Renewer
 │   └── sdktest/                 # test CA, SPIFFE certificates, fake OCSP responder for consumers' tests
 ├── codegen/                     # oapi-codegen configs and Forge client templates
 ├── internal/params/             # parameter serialization used by generated code
@@ -148,15 +149,20 @@ templates in step with the pinned generator version, which the drift check catch
   `nextUpdate`. When the responder is unreachable it falls back to the latest CRL, parsed with
   `x509.ParseRevocationList`, and rejects the peer when neither is available within the cache window.
   `forge-gateway` uses it for agents, and every service uses it for peer services.
-- **`enroll`** — the CSR flow from 0001, shared by agents and services:
+- **`enroll`** — the CSR flow from 0001, shared by agents and services. A `Credential` names the
+  first-enrollment secret: `TokenFile(path)` for a single-use enrollment token (agents, and services
+  on container and OS targets), or `ServiceAccountTokenFile(path)` for a projected Kubernetes service
+  account token (services only, [0005](0005-forge-infrastructure.md)). Both read the file when used,
+  never cache or log its contents, and print `[redacted]`.
   1. `ParseToken` extracts the environment ID and CA certificate hash without contacting the server. The
-     wire format comes from [0006](0006-forge-identity.md).
+     wire format comes from [0006](0006-forge-identity.md). A service account token carries neither, so
+     the caller supplies the environment ID and roots from its `environment` block.
   2. `KeyStore.Signer(ctx)` returns the host-local `crypto.Signer`, creating an ECDSA P-256 key on first
      use. `FileKeyStore` writes `0600` files; TPM and OS keystores are the caller's.
   3. `Enroll` connects without a client certificate, requires a chain certificate whose SHA-256 matches
-     the token, verifies the full chain against that root, and checks the server's SPIFFE ID and trust
-     domain. Only then does it send the CSR (PKCS #10, [RFC 2986](https://www.rfc-editor.org/rfc/rfc2986))
-     with the token.
+     the token (or, for a service account token, a chain to the supplied roots), verifies the full chain
+     against that root, and checks the server's SPIFFE ID and trust domain. Only then does it send the
+     CSR (PKCS #10, [RFC 2986](https://www.rfc-editor.org/rfc/rfc2986)) with the credential.
   4. `Result` returns the certificate and chain, the CA bundle, and the environment ID, name, and tier,
      which `forge-agent` records (0001).
   5. `Renewer` renews over mutual TLS at two-thirds of the certificate's lifetime and retries with backoff
@@ -243,7 +249,8 @@ The environment ID and CA bundle come from the host's `environment` block, as in
   revocation with a fake responder built on `ocsp.CreateResponse` and CRLs from
   `x509.CreateRevocationList`, including fail-closed timing.
 - **Enrollment** — end-to-end tests against a fake identity endpoint: a wrong CA hash, a wrong trust
-  domain, a reused token, and renewal at two-thirds of the lifetime with a fake clock.
+  domain, a reused token, and renewal at two-thirds of the lifetime with a fake clock. The same cases
+  run for a service account token file, plus a server that does not chain to the supplied roots.
 - **Conformance** (nested module) — requests produced by every generated operation are validated against
   their OpenAPI documents with kin-openapi.
 - **Drift, fuzzing, dependencies** — regenerated code must match, fuzzers run briefly in CI, the module
