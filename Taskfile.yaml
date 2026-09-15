@@ -1,0 +1,39 @@
+# SPDX-License-Identifier: Apache-2.0
+
+# Repository checks. The Hugo site is still driven by the hugo CLI directly (see
+# .claude/build-commands.md); add site tasks here only if the workflow grows to
+# need them.
+version: 3
+
+vars:
+  # license-eye (github.com/apache/skywalking-eyes) version for lint:license and
+  # license:fix; the only place it is pinned. CI runs `task lint:license`.
+  LICENSE_EYE_VERSION: v0.9.0
+
+tasks:
+  default:
+    cmds:
+      - task --list
+
+  lint:
+    desc: "Run repository checks"
+    cmds:
+      - task: lint:license
+
+  lint:license:
+    desc: "Check SPDX license headers with license-eye and .licenserc.yaml (CI runs this task)"
+    cmds:
+      - task: tool:license-eye
+      - "$(go env GOPATH)/bin/license-eye -c .licenserc.yaml header check"
+
+  license:fix:
+    desc: "Add missing SPDX license headers"
+    cmds:
+      - task: tool:license-eye
+      - "$(go env GOPATH)/bin/license-eye -c .licenserc.yaml header fix"
+
+  tool:license-eye:
+    internal: true
+    desc: "Install license-eye {{.LICENSE_EYE_VERSION}}"
+    cmds:
+      - go install github.com/apache/skywalking-eyes/cmd/license-eye@{{.LICENSE_EYE_VERSION}}

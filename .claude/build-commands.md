@@ -4,9 +4,13 @@
 
 # Key Build Commands
 
-This repository is intentionally minimal and does **not** yet ship a build runner (no `Taskfile`,
-no `Makefile`). Once the Hugo site is scaffolded, drive it with the Hugo CLI directly. Add a build
-runner only if the workflow grows enough to warrant one.
+This repository is intentionally minimal. `Taskfile.yaml` holds only repository checks; once the Hugo
+site is scaffolded, drive it with the Hugo CLI directly, and add site tasks only if the workflow grows
+enough to warrant them.
+
+- `task lint:license` — Check SPDX license headers. Installs license-eye with `go install` at
+  `LICENSE_EYE_VERSION`, pinned only in `Taskfile.yaml` (requires Go). CI runs this task.
+- `task license:fix` — Add missing SPDX license headers.
 
 - `hugo server -D` — Run the local dev server with drafts enabled; live-reloads on change
   (default <http://localhost:1313>).

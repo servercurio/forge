@@ -9,11 +9,11 @@ on:
         type: string
         required: false
         default: "1.27.1"
-      license-eye-version:
-        description: "license-eye CLI module version (github.com/apache/skywalking-eyes):"
+      task-version:
+        description: "Task Version:"
         type: string
         required: false
-        default: "v0.9.0"
+        default: "3.39.2"
       custom-job-label:
         description: "Custom Job Label:"
         type: string
@@ -46,12 +46,15 @@ jobs:
           go-version: ${{ inputs.go-version || '1.27.1' }}
           check-latest: false
 
-      # license-eye is installed with `go install` rather than through the
-      # apache/skywalking-eyes action, whose action.yml references
-      # actions/setup-go by tag, which the transitive-SHA-pinning policy
-      # rejects. Installing the CLI also pins it to an exact module version.
-      - name: Install license-eye
-        run: go install github.com/apache/skywalking-eyes/cmd/license-eye@${{ inputs.license-eye-version || 'v0.9.0' }}
+      - name: Install Task
+        uses: arduino/setup-task@c0bc642852239c2689f73f4ea6459c29405f3c52 # v3.0.0
+        with:
+          version: ${{ inputs.task-version || '3.39.2' }}
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
 
+      # CI runs the same task as local development. The task installs
+      # license-eye with `go install` at LICENSE_EYE_VERSION, pinned only in
+      # Taskfile.yaml, instead of using the apache/skywalking-eyes action,
+      # whose action.yml references actions by tag.
       - name: Check License Headers
-        run: license-eye -c .licenserc.yaml header check
+        run: task lint:license
