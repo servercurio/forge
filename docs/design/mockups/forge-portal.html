@@ -1,0 +1,856 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+
+<title>Forge Portal Prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="tokens.css">
+
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: var(--font-body); font-size: var(--text-sm); line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  h1, h2, h3 { font-family: var(--font-display); margin: 0; text-wrap: balance; }
+  h1 { font-size: var(--text-xl); font-weight: 600; letter-spacing: -0.015em; }
+  h2 { font-size: var(--text-lg); font-weight: 600; letter-spacing: -0.01em; }
+  h3 { font-size: var(--text-base); font-weight: 600; }
+  p { margin: 0; }
+  a { color: var(--action); }
+  :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 2px; }
+  .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+  .muted { color: var(--text-muted); }
+
+  /* theme-paired mark: the light file carries Plum/Rose, the dark file Quench/Spark */
+  .on-dark-only { display: none; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .on-light-only { display: none; }
+    :root:not([data-theme="light"]) .on-dark-only { display: block; }
+  }
+  :root[data-theme="dark"] .on-light-only { display: none; }
+  :root[data-theme="dark"] .on-dark-only { display: block; }
+
+  /* ---------------- shell ---------------- */
+  .shell { display: grid; grid-template-columns: 232px 1fr; min-height: 100vh; }
+  .shell[hidden] { display: none; }
+
+  .rail {
+    background: var(--surface); border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; gap: var(--space-6);
+    padding: var(--space-4) 0; position: sticky; top: 0; height: 100vh;
+  }
+  .rail-brand { display: flex; align-items: center; gap: var(--space-3); padding: 0 var(--space-4); }
+  .rail-brand img { width: 32px; height: auto; }
+  .rail-brand .n { font-family: var(--font-display); font-weight: 700; font-size: var(--text-base); letter-spacing: -0.01em; }
+  nav { display: flex; flex-direction: column; gap: 2px; padding: 0 var(--space-2); }
+  .nav-label {
+    font-family: var(--font-mono); font-size: 10px; text-transform: uppercase;
+    letter-spacing: 0.12em; color: var(--text-muted); padding: var(--space-3) var(--space-3) var(--space-1);
+  }
+  .nav-item {
+    display: flex; align-items: center; gap: var(--space-3); width: 100%;
+    font: inherit; text-align: left; background: none; border: 0; cursor: pointer;
+    color: var(--text); padding: 7px var(--space-3); border-radius: var(--radius-md);
+  }
+  .nav-item:hover { background: var(--surface-sunken); }
+  .nav-item[aria-current="page"] { background: var(--surface-sunken); font-weight: 600; box-shadow: inset 2px 0 0 var(--action); }
+  .nav-item svg { width: 17px; height: 17px; flex: none; color: var(--text-muted); }
+  .nav-item[aria-current="page"] svg { color: var(--action); }
+  .nav-item .count { margin-left: auto; font-family: var(--font-mono); font-size: var(--text-xs); color: var(--text-muted); }
+  .nav-item .count.hot { color: var(--warn); font-weight: 600; }
+
+  .main { display: flex; flex-direction: column; min-width: 0; }
+  .topbar {
+    display: flex; align-items: center; gap: var(--space-4);
+    padding: var(--space-3) var(--space-6); border-bottom: 1px solid var(--border);
+    background: var(--surface); position: sticky; top: 0; z-index: 5;
+  }
+  .env {
+    display: inline-flex; align-items: center; gap: var(--space-2);
+    font-family: var(--font-mono); font-size: var(--text-xs);
+    padding: var(--space-1) var(--space-3); background: var(--surface-sunken);
+    border-left: 3px solid var(--tier-staging); border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  }
+  .env .tier { text-transform: uppercase; letter-spacing: 0.08em; color: var(--tier-staging); font-weight: 500; }
+  .spacer { margin-left: auto; }
+  .who { display: flex; align-items: center; gap: var(--space-2); font-size: var(--text-xs); }
+  .avatar {
+    width: 26px; height: 26px; border-radius: 50%; background: var(--action);
+    color: var(--action-text); display: grid; place-items: center;
+    font-size: 11px; font-weight: 600; font-family: var(--font-display);
+  }
+  .content { padding: var(--space-6); display: flex; flex-direction: column; gap: var(--space-6); max-width: 1200px; }
+  .page-head { display: flex; align-items: flex-start; gap: var(--space-4); flex-wrap: wrap; }
+  .page-head p { color: var(--text-muted); margin-top: 2px; }
+
+  /* ---------------- controls ---------------- */
+  .btn {
+    font: inherit; font-size: var(--text-sm); font-weight: 500; cursor: pointer;
+    border-radius: var(--radius-md); padding: 6px var(--space-4);
+    border: 1px solid transparent; display: inline-flex; align-items: center; gap: var(--space-2);
+  }
+  .btn svg { width: 15px; height: 15px; }
+  .btn-primary { background: var(--action); color: var(--action-text); }
+  .btn-primary:hover { background: var(--action-hover); }
+  .btn-secondary { background: transparent; color: var(--text); border-color: var(--border-strong); }
+  .btn-secondary:hover { background: var(--surface-sunken); }
+  .btn-critical { background: var(--critical); color: #FFFFFF; }
+  :root[data-theme="dark"] .btn-critical { color: var(--sc-anvil); }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .btn-critical { color: var(--sc-anvil); } }
+  .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+  .icon-btn {
+    background: none; border: 1px solid var(--border-strong); border-radius: var(--radius-md);
+    color: var(--text); cursor: pointer; width: 30px; height: 30px; display: grid; place-items: center;
+  }
+  .icon-btn:hover { background: var(--surface-sunken); }
+  .icon-btn svg { width: 15px; height: 15px; }
+
+  input[type="text"], input[type="password"], select {
+    font: inherit; font-size: var(--text-sm); padding: 6px var(--space-3);
+    border: 1px solid var(--border-strong); border-radius: var(--radius-md);
+    background: var(--surface); color: var(--text); width: 100%;
+  }
+
+  /* ---------------- pills ---------------- */
+  .pill {
+    display: inline-flex; align-items: center; gap: 6px; padding: 1px var(--space-3);
+    border-radius: 999px; font-size: var(--text-xs); font-weight: 500; white-space: nowrap;
+  }
+  .pill .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex: none; }
+  .s-in_sync { background: var(--ok-fill); color: var(--ok); }
+  .s-drifted { background: var(--warn-fill); color: var(--warn); }
+  .s-failed { background: var(--critical-fill); color: var(--critical); }
+  .s-unknown { background: var(--unknown-fill); color: var(--unknown); }
+
+  /* ---------------- cards & tiles ---------------- */
+  .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--space-4); }
+  .tile {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-lg); padding: var(--space-4);
+    display: flex; flex-direction: column; gap: var(--space-1);
+  }
+  .tile .k { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-muted); }
+  .tile .v { font-family: var(--font-display); font-size: var(--text-2xl); font-weight: 700; letter-spacing: -0.02em; line-height: 1.1; }
+  .tile .s { font-size: var(--text-xs); color: var(--text-muted); }
+  .tile.alert { border-color: var(--warn); }
+  .tile.alert .v { color: var(--warn); }
+
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
+  .panel-head {
+    display: flex; align-items: center; gap: var(--space-3);
+    padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border);
+  }
+  .panel-head h3 { font-size: var(--text-sm); }
+  .panel-body { padding: var(--space-4); }
+
+  /* ---------------- table ---------------- */
+  .table-wrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: var(--text-sm); }
+  th {
+    text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em;
+    color: var(--text-muted); font-weight: 600; padding: var(--space-3) var(--space-4);
+    border-bottom: 1px solid var(--border); white-space: nowrap;
+  }
+  td { padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border); vertical-align: middle; }
+  tbody tr:last-child td { border-bottom: 0; }
+  tbody tr.clickable { cursor: pointer; }
+  tbody tr.clickable:hover { background: var(--surface-sunken); }
+  td.name { font-weight: 500; }
+  td .sub { display: block; font-size: var(--text-xs); color: var(--text-muted); font-family: var(--font-mono); }
+
+  .filters { display: flex; gap: var(--space-3); flex-wrap: wrap; align-items: center; }
+  .filters input[type="text"] { max-width: 260px; }
+  .chip {
+    font: inherit; font-size: var(--text-xs); cursor: pointer;
+    background: transparent; color: var(--text-muted);
+    border: 1px solid var(--border-strong); border-radius: 999px; padding: 3px var(--space-3);
+  }
+  .chip[aria-pressed="true"] { background: var(--action); color: var(--action-text); border-color: var(--action); }
+
+  /* ---------------- detail ---------------- */
+  .kv { display: grid; grid-template-columns: 150px 1fr; gap: var(--space-2) var(--space-4); }
+  .kv dt { color: var(--text-muted); font-size: var(--text-xs); }
+  .kv dd { margin: 0; font-family: var(--font-mono); font-size: var(--text-xs); word-break: break-all; }
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-4); align-items: start; }
+  .labels { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+  .label-chip { font-family: var(--font-mono); font-size: var(--text-xs); background: var(--surface-sunken); padding: 2px var(--space-2); border-radius: var(--radius-sm); }
+
+  .timeline { display: flex; flex-direction: column; gap: 0; }
+  .ev { display: grid; grid-template-columns: 112px 14px 1fr; gap: var(--space-3); padding: var(--space-3) 0; border-bottom: 1px dashed var(--border); }
+  .ev:last-child { border-bottom: 0; }
+  .ev time { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--text-muted); }
+  .ev .mk { width: 9px; height: 9px; border-radius: 50%; margin-top: 5px; }
+  .ev .txt { font-size: var(--text-xs); }
+
+  /* ---------------- plan flow ---------------- */
+  .steps { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+  .step { display: flex; align-items: center; gap: var(--space-2); font-size: var(--text-xs); color: var(--text-muted); }
+  .step .n { width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; border: 1px solid var(--border-strong); font-family: var(--font-mono); font-size: 10px; }
+  .step[data-state="done"] .n { background: var(--ok); color: #fff; border-color: var(--ok); }
+  .step[data-state="now"] { color: var(--text); font-weight: 600; }
+  .step[data-state="now"] .n { background: var(--action); color: var(--action-text); border-color: var(--action); }
+  .step-sep { width: 22px; height: 1px; background: var(--border-strong); }
+
+  .diff { font-family: var(--font-mono); font-size: var(--text-xs); border-radius: var(--radius-md); overflow: hidden; border: 1px solid var(--border); }
+  .diff-head { padding: var(--space-2) var(--space-4); background: var(--surface-sunken); display: flex; align-items: center; gap: var(--space-3); }
+  .diff-head .path { font-weight: 500; }
+  .diff pre { margin: 0; padding: var(--space-3) var(--space-4); overflow-x: auto; background: var(--surface); }
+  .diff .add { color: var(--ok); }
+  .diff .del { color: var(--critical); }
+  .verdict { display: inline-flex; align-items: center; gap: 6px; font-size: var(--text-xs); font-weight: 600; }
+
+  .deny { border-left: 3px solid var(--critical); background: var(--critical-fill); padding: var(--space-3) var(--space-4); border-radius: 0 var(--radius-md) var(--radius-md) 0; }
+  .deny .rule { font-family: var(--font-mono); font-size: var(--text-xs); }
+
+  /* ---------------- modal ---------------- */
+  .scrim { position: fixed; inset: 0; background: rgba(21,9,14,0.55); display: grid; place-items: center; padding: var(--space-4); z-index: 20; }
+  .scrim[hidden] { display: none; }
+  .modal { background: var(--surface); border-radius: var(--radius-lg); box-shadow: var(--shadow-overlay); width: min(520px, 100%); padding: var(--space-6); display: flex; flex-direction: column; gap: var(--space-4); }
+  .modal h2 { font-size: var(--text-lg); }
+  .modal-actions { display: flex; gap: var(--space-3); justify-content: flex-end; }
+  .warnbox { border-left: 3px solid var(--warn); background: var(--warn-fill); color: var(--warn); padding: var(--space-3) var(--space-4); border-radius: 0 var(--radius-md) var(--radius-md) 0; font-size: var(--text-xs); }
+
+  /* ---------------- standalone screens ---------------- */
+  .standalone { min-height: 100vh; display: grid; place-items: center; padding: var(--space-6); }
+  .standalone[hidden] { display: none; }
+  .auth-card { width: min(400px, 100%); display: flex; flex-direction: column; gap: var(--space-6); }
+  .auth-card .lock { display: flex; justify-content: center; }
+  .auth-card .lock img { width: 190px; height: auto; }
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .field label { font-size: var(--text-xs); font-weight: 600; }
+  .surface-note {
+    font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em;
+    color: var(--text-muted); text-align: center; border-top: 1px solid var(--border); padding-top: var(--space-3);
+  }
+  .cb-icon { width: 46px; height: 46px; border-radius: 50%; background: var(--ok-fill); color: var(--ok); display: grid; place-items: center; margin-inline: auto; }
+  .cb-icon svg { width: 24px; height: 24px; }
+
+  .proto-bar {
+    position: fixed; bottom: var(--space-4); left: 50%; transform: translateX(-50%);
+    background: var(--surface); border: 1px solid var(--border-strong); border-radius: 999px;
+    box-shadow: var(--shadow-overlay); padding: 5px var(--space-2); display: flex; gap: 2px;
+    align-items: center; z-index: 30; flex-wrap: wrap; justify-content: center; max-width: calc(100% - 32px);
+  }
+  .proto-bar .lbl { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-muted); padding: 0 var(--space-2); }
+  .proto-bar button {
+    font: inherit; font-size: var(--text-xs); cursor: pointer; background: none; border: 0;
+    color: var(--text); padding: 4px var(--space-3); border-radius: 999px;
+  }
+  .proto-bar button:hover { background: var(--surface-sunken); }
+  .proto-bar button[aria-current="true"] { background: var(--action); color: var(--action-text); }
+
+  @media (max-width: 900px) {
+    .shell { grid-template-columns: 1fr; }
+    .rail { position: static; height: auto; flex-direction: row; align-items: center; overflow-x: auto; gap: var(--space-4); }
+    .rail nav { flex-direction: row; }
+    .nav-label, .nav-item .count { display: none; }
+    .tiles { grid-template-columns: repeat(2, 1fr); }
+    .two-col { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 560px) {
+    .tiles { grid-template-columns: 1fr; }
+    .kv { grid-template-columns: 1fr; }
+    .content { padding: var(--space-4); }
+  }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+
+<!-- ============================ LOGIN (forge-sso) ============================ -->
+<div class="standalone" id="screen-login" hidden>
+  <div class="auth-card">
+    <div class="lock">
+      <img class="on-light-only" src="forge-lockup.svg" alt="Forge">
+      <img class="on-dark-only" src="forge-lockup-dark.svg" alt="Forge">
+    </div>
+
+    <div class="panel">
+      <div class="panel-body" style="display:flex;flex-direction:column;gap:var(--space-4)">
+        <div>
+          <h2>Sign in</h2>
+          <p class="muted" style="font-size:var(--text-xs);margin-top:4px">
+            You are signing in to <strong>qa-east</strong>, a staging environment.
+          </p>
+        </div>
+
+        <div class="env" style="align-self:flex-start">
+          <span class="tier">staging</span>
+          <span class="muted">qa-east</span>
+        </div>
+
+        <div class="field">
+          <label for="login-user">Email</label>
+          <input id="login-user" type="text" value="dana.okafor@example.com" autocomplete="username" spellcheck="false">
+        </div>
+        <div class="field">
+          <label for="login-pass">Password</label>
+          <input id="login-pass" type="password" value="············" autocomplete="current-password">
+        </div>
+
+        <button class="btn btn-primary" style="justify-content:center" type="button" data-go="overview">Sign in</button>
+
+        <div style="display:flex;align-items:center;gap:var(--space-3)">
+          <span style="flex:1;height:1px;background:var(--border)"></span>
+          <span class="muted" style="font-size:var(--text-xs)">or</span>
+          <span style="flex:1;height:1px;background:var(--border)"></span>
+        </div>
+
+        <button class="btn btn-secondary" style="justify-content:center" type="button" data-go="overview">
+          Continue with Okta
+        </button>
+        <button class="btn btn-secondary" style="justify-content:center" type="button" data-go="overview">
+          Use a security key
+        </button>
+      </div>
+    </div>
+
+    <p class="surface-note">Served by forge-sso &middot; 0007</p>
+  </div>
+</div>
+
+<!-- ======================= CLI CALLBACK (forge-cli) ======================= -->
+<div class="standalone" id="screen-callback" hidden>
+  <div class="auth-card">
+    <div class="panel">
+      <div class="panel-body" style="display:flex;flex-direction:column;gap:var(--space-4);text-align:center">
+        <div class="cb-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+        </div>
+        <div>
+          <h2>You're signed in</h2>
+          <p class="muted" style="font-size:var(--text-xs);margin-top:6px">
+            You can close this tab and return to your terminal.
+          </p>
+        </div>
+        <dl class="kv" style="text-align:left;grid-template-columns:110px 1fr">
+          <dt>Environment</dt><dd>qa-east &middot; staging</dd>
+          <dt>Principal</dt><dd>dana.okafor@example.com</dd>
+          <dt>Profile</dt><dd>qa-east</dd>
+          <dt>Expires</dt><dd>2026-09-16T12:37:00Z</dd>
+        </dl>
+      </div>
+    </div>
+    <p class="surface-note">Served by forge-cli on 127.0.0.1 &middot; 0010, 0016</p>
+  </div>
+</div>
+
+<!-- ================================ APP ================================ -->
+<div class="shell" id="app" hidden>
+  <aside class="rail">
+    <div class="rail-brand">
+      <img class="on-light-only" src="forge-mark-minimal.svg" alt="">
+      <img class="on-dark-only" src="forge-mark-minimal-dark.svg" alt="">
+      <span class="n">Forge</span>
+    </div>
+    <nav aria-label="Primary">
+      <span class="nav-label">Estate</span>
+      <button class="nav-item" data-go="overview" aria-current="page">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
+        Overview
+      </button>
+      <button class="nav-item" data-go="endpoints">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="8" rx="2"/><rect x="2" y="13" width="20" height="8" rx="2"/><path d="M6 7h.01M6 17h.01"/></svg>
+        Endpoints <span class="count">6</span>
+      </button>
+      <span class="nav-label">Desired state</span>
+      <button class="nav-item" data-go="plan">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2 3 7v10l9 5 9-5V7z"/><circle cx="12" cy="12" r="2.5"/></svg>
+        Directives <span class="count hot">1</span>
+      </button>
+      <button class="nav-item" data-go="stub">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>
+        Reconciliations
+      </button>
+      <span class="nav-label">Access</span>
+      <button class="nav-item" data-go="stub">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="11" width="12" height="9" rx="2"/><circle cx="17.5" cy="8" r="1.1" fill="currentColor" stroke="none"/><circle cx="20.5" cy="4.5" r="1.7" fill="currentColor" stroke="none"/></svg>
+        Agents
+      </button>
+      <button class="nav-item" data-go="stub">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="7" cy="12" r="1.6"/></svg>
+        API tokens
+      </button>
+    </nav>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <div class="env">
+        <span class="tier">staging</span>
+        <span class="muted">qa-east</span>
+      </div>
+      <span class="muted mono" style="font-size:var(--text-xs)">tenant: northwind</span>
+      <div class="spacer"></div>
+      <button class="icon-btn" id="theme-toggle" type="button" title="Switch theme" aria-label="Switch theme">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9c-4.97 0-9-4.03-9-9Z"/></svg>
+      </button>
+      <div class="who">
+        <span class="avatar">DO</span>
+        <span class="muted">Dana Okafor</span>
+      </div>
+    </header>
+
+    <!-- ---------------- OVERVIEW ---------------- -->
+    <div class="content" id="screen-overview">
+      <div class="page-head">
+        <div>
+          <h1>Overview</h1>
+          <p>Six endpoints in <strong>northwind</strong>. Last reconciliation 14 minutes ago.</p>
+        </div>
+      </div>
+
+      <div class="tiles">
+        <div class="tile">
+          <span class="k">In sync</span>
+          <span class="v">3</span>
+          <span class="s">of 6 endpoints</span>
+        </div>
+        <div class="tile alert">
+          <span class="k">Drifted</span>
+          <span class="v">1</span>
+          <span class="s">db-02 since 09:12</span>
+        </div>
+        <div class="tile">
+          <span class="k">Failed</span>
+          <span class="v" style="color:var(--critical)">1</span>
+          <span class="s">edge-fw-01, 2 attempts</span>
+        </div>
+        <div class="tile">
+          <span class="k">Not reporting</span>
+          <span class="v" style="color:var(--text-muted)">1</span>
+          <span class="s">cache-01, 3h 22m</span>
+        </div>
+      </div>
+
+      <div class="two-col">
+        <div class="panel">
+          <div class="panel-head">
+            <h3>Needs attention</h3>
+            <div class="spacer"></div>
+            <button class="btn btn-secondary" type="button" data-go="endpoints">All endpoints</button>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Endpoint</th><th>State</th><th>Generation</th></tr>
+              </thead>
+              <tbody>
+                <tr class="clickable" data-go="endpoint">
+                  <td class="name">edge-fw-01<span class="sub">agentless &middot; device</span></td>
+                  <td><span class="pill s-failed"><span class="dot"></span>failed</span></td>
+                  <td class="mono">1186</td>
+                </tr>
+                <tr class="clickable" data-go="endpoint">
+                  <td class="name">db-02<span class="sub">agent &middot; 0.4.2</span></td>
+                  <td><span class="pill s-drifted"><span class="dot"></span>drifted</span></td>
+                  <td class="mono">1188</td>
+                </tr>
+                <tr class="clickable" data-go="endpoint">
+                  <td class="name">cache-01<span class="sub">agent &middot; 0.4.1</span></td>
+                  <td><span class="pill s-unknown"><span class="dot"></span>unknown</span></td>
+                  <td class="mono">1187</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head"><h3>Recent activity</h3></div>
+          <div class="panel-body">
+            <div class="timeline">
+              <div class="ev">
+                <time>09:41:08Z</time>
+                <span class="mk" style="background:var(--ok)"></span>
+                <span class="txt">Applied generation <span class="mono">1188</span> to 4 endpoints</span>
+              </div>
+              <div class="ev">
+                <time>09:38:52Z</time>
+                <span class="mk" style="background:var(--critical)"></span>
+                <span class="txt"><strong>edge-fw-01</strong> apply failed &mdash; connection refused on 22/tcp</span>
+              </div>
+              <div class="ev">
+                <time>09:12:30Z</time>
+                <span class="mk" style="background:var(--warn)"></span>
+                <span class="txt"><strong>db-02</strong> drifted &mdash; <span class="mono">postgresql.conf</span> modified on host</span>
+              </div>
+              <div class="ev">
+                <time>08:55:02Z</time>
+                <span class="mk" style="background:var(--unknown)"></span>
+                <span class="txt"><strong>cache-01</strong> stopped reporting</span>
+              </div>
+              <div class="ev">
+                <time>08:30:00Z</time>
+                <span class="mk" style="background:var(--ok)"></span>
+                <span class="txt">Directive set <span class="mono">web-tier</span> updated to revision 41</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ---------------- ENDPOINTS ---------------- -->
+    <div class="content" id="screen-endpoints" hidden>
+      <div class="page-head">
+        <div>
+          <h1>Endpoints</h1>
+          <p>Everything <strong>northwind</strong> owns in qa-east.</p>
+        </div>
+      </div>
+
+      <div class="filters">
+        <input type="text" id="ep-search" placeholder="Filter by name or label" aria-label="Filter endpoints">
+        <button class="chip" type="button" aria-pressed="false" data-filter="drifted">drifted</button>
+        <button class="chip" type="button" aria-pressed="false" data-filter="failed">failed</button>
+        <button class="chip" type="button" aria-pressed="false" data-filter="unknown">not reporting</button>
+        <span class="muted mono" style="font-size:var(--text-xs)" id="ep-count">6 shown</span>
+      </div>
+
+      <div class="panel">
+        <div class="table-wrap">
+          <table id="ep-table">
+            <thead>
+              <tr><th>Name</th><th>Path</th><th>State</th><th>Applied</th><th>Last report</th><th>Labels</th></tr>
+            </thead>
+            <tbody>
+              <tr class="clickable" data-go="endpoint" data-state="in_sync" data-name="web-01">
+                <td class="name">web-01<span class="sub">spiffe://…/agent/7f3k2m</span></td>
+                <td class="mono">agent</td>
+                <td><span class="pill s-in_sync"><span class="dot"></span>in_sync</span></td>
+                <td class="mono">1188</td>
+                <td class="mono">2m ago</td>
+                <td><span class="label-chip">role=web</span></td>
+              </tr>
+              <tr class="clickable" data-go="endpoint" data-state="in_sync" data-name="web-02">
+                <td class="name">web-02<span class="sub">spiffe://…/agent/9d1x4p</span></td>
+                <td class="mono">agent</td>
+                <td><span class="pill s-in_sync"><span class="dot"></span>in_sync</span></td>
+                <td class="mono">1188</td>
+                <td class="mono">2m ago</td>
+                <td><span class="label-chip">role=web</span></td>
+              </tr>
+              <tr class="clickable" data-go="endpoint" data-state="drifted" data-name="db-02">
+                <td class="name">db-02<span class="sub">spiffe://…/agent/4b8n2c</span></td>
+                <td class="mono">agent</td>
+                <td><span class="pill s-drifted"><span class="dot"></span>drifted</span></td>
+                <td class="mono">1188</td>
+                <td class="mono">1m ago</td>
+                <td><span class="label-chip">role=db</span></td>
+              </tr>
+              <tr class="clickable" data-go="endpoint" data-state="in_sync" data-name="k8s-node-03">
+                <td class="name">k8s-node-03<span class="sub">spiffe://…/agent/2q7w5e</span></td>
+                <td class="mono">agent</td>
+                <td><span class="pill s-in_sync"><span class="dot"></span>in_sync</span></td>
+                <td class="mono">1188</td>
+                <td class="mono">4m ago</td>
+                <td><span class="label-chip">role=compute</span></td>
+              </tr>
+              <tr class="clickable" data-go="endpoint" data-state="unknown" data-name="cache-01">
+                <td class="name">cache-01<span class="sub">spiffe://…/agent/6r3t8y</span></td>
+                <td class="mono">agent</td>
+                <td><span class="pill s-unknown"><span class="dot"></span>unknown</span></td>
+                <td class="mono">1187</td>
+                <td class="mono">3h 22m ago</td>
+                <td><span class="label-chip">role=cache</span></td>
+              </tr>
+              <tr class="clickable" data-go="endpoint" data-state="failed" data-name="edge-fw-01">
+                <td class="name">edge-fw-01<span class="sub">device &middot; no agent</span></td>
+                <td class="mono">agentless</td>
+                <td><span class="pill s-failed"><span class="dot"></span>failed</span></td>
+                <td class="mono">1186</td>
+                <td class="mono">&mdash;</td>
+                <td><span class="label-chip">role=edge</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ---------------- ENDPOINT DETAIL ---------------- -->
+    <div class="content" id="screen-endpoint" hidden>
+      <div class="page-head">
+        <div>
+          <h1>db-02</h1>
+          <p>Agent endpoint &middot; reported 1 minute ago</p>
+        </div>
+        <div class="spacer"></div>
+        <span class="pill s-drifted" style="align-self:center"><span class="dot"></span>drifted</span>
+        <button class="btn btn-secondary" type="button" data-go="plan">Plan a change</button>
+        <button class="btn btn-critical" type="button" data-confirm="Retire endpoint db-02">Retire</button>
+      </div>
+
+      <div class="warnbox">
+        Host state diverged from generation <strong>1188</strong> at 09:12:30Z.
+        <span class="mono">/etc/postgresql/16/main/postgresql.conf</span> was modified outside Forge.
+      </div>
+
+      <div class="two-col">
+        <div class="panel">
+          <div class="panel-head"><h3>Identity</h3></div>
+          <div class="panel-body">
+            <dl class="kv">
+              <dt>SPIFFE ID</dt><dd>spiffe://k7m2q9x4bt6vn8rc3wzhy5jd1f/agent/4b8n2c9v5k</dd>
+              <dt>Agent version</dt><dd>0.4.2</dd>
+              <dt>Certificate</dt><dd>serial 3f:a1:09:cc &middot; expires 2026-09-23T04:37:00Z</dd>
+              <dt>Enrolled</dt><dd>2026-06-02T11:04:18Z</dd>
+              <dt>Applied generation</dt><dd>1188</dd>
+            </dl>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head"><h3>Facts</h3><div class="spacer"></div><span class="muted mono" style="font-size:var(--text-xs)">214 reported</span></div>
+          <div class="panel-body">
+            <dl class="kv">
+              <dt>os.family</dt><dd>debian</dd>
+              <dt>os.version</dt><dd>12</dd>
+              <dt>kernel</dt><dd>6.1.0-23-amd64</dd>
+              <dt>cpu.cores</dt><dd>8</dd>
+              <dt>memory.total</dt><dd>16 GiB</dd>
+              <dt>arch</dt><dd>amd64</dd>
+            </dl>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h3>History</h3></div>
+        <div class="panel-body">
+          <div class="timeline">
+            <div class="ev">
+              <time>09:12:30Z</time><span class="mk" style="background:var(--warn)"></span>
+              <span class="txt">Drift detected in <span class="mono">postgresql.conf</span></span>
+            </div>
+            <div class="ev">
+              <time>08:41:02Z</time><span class="mk" style="background:var(--ok)"></span>
+              <span class="txt">Applied generation <span class="mono">1188</span> &mdash; 3 resources changed</span>
+            </div>
+            <div class="ev">
+              <time>2026-09-15</time><span class="mk" style="background:var(--ok)"></span>
+              <span class="txt">Applied generation <span class="mono">1187</span></span>
+            </div>
+            <div class="ev">
+              <time>2026-09-14</time><span class="mk" style="background:var(--action)"></span>
+              <span class="txt">Certificate renewed automatically</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ---------------- PLAN ---------------- -->
+    <div class="content" id="screen-plan" hidden>
+      <div class="page-head">
+        <div>
+          <h1>Plan &mdash; web-tier</h1>
+          <p>Revision 41 against 3 endpoints. Nothing is written until you apply.</p>
+        </div>
+      </div>
+
+      <div class="steps">
+        <span class="step" data-state="done"><span class="n">1</span>Select</span>
+        <span class="step-sep"></span>
+        <span class="step" data-state="done"><span class="n">2</span>Plan</span>
+        <span class="step-sep"></span>
+        <span class="step" data-state="now"><span class="n">3</span>Review</span>
+        <span class="step-sep"></span>
+        <span class="step"><span class="n">4</span>Apply</span>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h3>web-01, web-02</h3>
+          <span class="verdict" style="color:var(--ok)">2 changes</span>
+          <div class="spacer"></div>
+          <span class="muted mono" style="font-size:var(--text-xs)">bound to generation 1188</span>
+        </div>
+        <div class="panel-body" style="display:flex;flex-direction:column;gap:var(--space-3)">
+          <div class="diff">
+            <div class="diff-head">
+              <span class="path">File /etc/nginx/conf.d/tls.conf</span>
+              <span class="verdict" style="color:var(--warn)">update</span>
+            </div>
+<pre><span class="del">- ssl_protocols TLSv1.2 TLSv1.3;</span>
+<span class="add">+ ssl_protocols TLSv1.3;</span>
+<span class="del">- ssl_session_timeout 10m;</span>
+<span class="add">+ ssl_session_timeout 5m;</span></pre>
+          </div>
+          <div class="diff">
+            <div class="diff-head">
+              <span class="path">Service nginx</span>
+              <span class="verdict" style="color:var(--ok)">no change</span>
+            </div>
+<pre>  enabled: true
+  state: started</pre>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h3>db-02</h3>
+          <span class="verdict" style="color:var(--critical)">denied by policy</span>
+        </div>
+        <div class="panel-body">
+          <div class="deny">
+            <strong>policy_denied</strong>
+            <p style="margin-top:4px">Rule <span class="rule">baseline/deny_db_tls_downgrade</span> rejected this change:
+            TLS session timeout below 10m is not permitted on <span class="mono">role=db</span> endpoints in
+            <span class="mono">staging</span> or <span class="mono">production</span>.</p>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:var(--space-3);align-items:center;flex-wrap:wrap">
+        <button class="btn btn-primary" type="button" data-confirm="Apply revision 41 to 2 endpoints">Apply to 2 endpoints</button>
+        <button class="btn btn-secondary" type="button" data-go="endpoints">Cancel</button>
+        <span class="muted" style="font-size:var(--text-xs)">db-02 is excluded &mdash; a denied endpoint cannot be applied.</span>
+      </div>
+    </div>
+
+    <!-- ---------------- STUB ---------------- -->
+    <div class="content" id="screen-stub" hidden>
+      <div class="page-head">
+        <div>
+          <h1>Not in this prototype</h1>
+          <p>0017 specifies thirteen routes. This prototype builds the four that carry the design;
+             the rest are navigable but unbuilt.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ---------------- CONFIRM MODAL ---------------- -->
+<div class="scrim" id="confirm" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+    <h2 id="confirm-title">Confirm in qa-east</h2>
+    <p id="confirm-what" class="muted"></p>
+    <div class="warnbox">
+      This affects the <strong>staging</strong> environment <strong>qa-east</strong>.
+    </div>
+    <div class="field">
+      <label for="confirm-input">Type the environment name to confirm</label>
+      <input id="confirm-input" type="text" placeholder="qa-east" spellcheck="false" autocomplete="off">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" type="button" id="confirm-cancel">Cancel</button>
+      <button class="btn btn-primary" type="button" id="confirm-ok" disabled>Confirm</button>
+    </div>
+  </div>
+</div>
+
+<!-- ---------------- PROTOTYPE BAR ---------------- -->
+<div class="proto-bar">
+  <span class="lbl">Screen</span>
+  <button type="button" data-go="login">Login</button>
+  <button type="button" data-go="callback">CLI callback</button>
+  <button type="button" data-go="overview" aria-current="true">Overview</button>
+  <button type="button" data-go="endpoints">Endpoints</button>
+  <button type="button" data-go="endpoint">Detail</button>
+  <button type="button" data-go="plan">Plan</button>
+</div>
+
+<script>
+  (function () {
+    var root = document.documentElement;
+    var STANDALONE = { login: "screen-login", callback: "screen-callback" };
+    var APP = ["overview", "endpoints", "endpoint", "plan", "stub"];
+
+    function show(name) {
+      document.getElementById("screen-login").hidden = true;
+      document.getElementById("screen-callback").hidden = true;
+      var app = document.getElementById("app");
+
+      if (STANDALONE[name]) {
+        app.hidden = true;
+        document.getElementById(STANDALONE[name]).hidden = false;
+      } else {
+        app.hidden = false;
+        APP.forEach(function (s) {
+          var el = document.getElementById("screen-" + s);
+          if (el) el.hidden = (s !== name);
+        });
+        document.querySelectorAll(".nav-item").forEach(function (b) {
+          if (b.dataset.go === name) b.setAttribute("aria-current", "page");
+          else b.removeAttribute("aria-current");
+        });
+      }
+      document.querySelectorAll(".proto-bar button").forEach(function (b) {
+        if (b.dataset.go === name) b.setAttribute("aria-current", "true");
+        else b.removeAttribute("aria-current");
+      });
+      window.scrollTo(0, 0);
+    }
+
+    document.addEventListener("click", function (e) {
+      var go = e.target.closest("[data-go]");
+      if (go) { show(go.dataset.go); return; }
+
+      var conf = e.target.closest("[data-confirm]");
+      if (conf) {
+        document.getElementById("confirm-what").textContent = conf.dataset.confirm + ".";
+        var inp = document.getElementById("confirm-input");
+        inp.value = "";
+        document.getElementById("confirm-ok").disabled = true;
+        document.getElementById("confirm").hidden = false;
+        inp.focus();
+      }
+    });
+
+    var confirmInput = document.getElementById("confirm-input");
+    confirmInput.addEventListener("input", function () {
+      document.getElementById("confirm-ok").disabled = (this.value.trim() !== "qa-east");
+    });
+    document.getElementById("confirm-cancel").addEventListener("click", function () {
+      document.getElementById("confirm").hidden = true;
+    });
+    document.getElementById("confirm-ok").addEventListener("click", function () {
+      document.getElementById("confirm").hidden = true;
+    });
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape") document.getElementById("confirm").hidden = true;
+    });
+
+    // endpoint filters
+    var chips = document.querySelectorAll(".chip[data-filter]");
+    var search = document.getElementById("ep-search");
+    function applyFilter() {
+      var active = [];
+      chips.forEach(function (c) { if (c.getAttribute("aria-pressed") === "true") active.push(c.dataset.filter); });
+      var q = (search.value || "").toLowerCase();
+      var shown = 0;
+      document.querySelectorAll("#ep-table tbody tr").forEach(function (tr) {
+        var okState = active.length === 0 || active.indexOf(tr.dataset.state) !== -1;
+        var okText = q === "" || tr.textContent.toLowerCase().indexOf(q) !== -1;
+        tr.hidden = !(okState && okText);
+        if (!tr.hidden) shown++;
+      });
+      document.getElementById("ep-count").textContent = shown + " shown";
+    }
+    chips.forEach(function (c) {
+      c.addEventListener("click", function () {
+        this.setAttribute("aria-pressed", this.getAttribute("aria-pressed") === "true" ? "false" : "true");
+        applyFilter();
+      });
+    });
+    search.addEventListener("input", applyFilter);
+
+    // theme
+    var stored = null;
+    try { stored = localStorage.getItem("forge-proto-theme"); } catch (e) { stored = null; }
+    if (stored === "dark" || stored === "light") root.setAttribute("data-theme", stored);
+    document.getElementById("theme-toggle").addEventListener("click", function () {
+      var attr = root.getAttribute("data-theme");
+      var dark = attr ? attr === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches;
+      var next = dark ? "light" : "dark";
+      root.setAttribute("data-theme", next);
+      try { localStorage.setItem("forge-proto-theme", next); } catch (e) { /* private mode */ }
+    });
+
+    show("overview");
+  })();
+</script>
