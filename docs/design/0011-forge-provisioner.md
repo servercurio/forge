@@ -360,7 +360,7 @@ from [CONVENTIONS.md](CONVENTIONS.md).
 Bootstrap from `go-echo-starter`, replacing its logging with `forge-common` and its route-metadata
 OpenAPI with the embedded contract from 0002. Binary `forge-provisioner`, shipped as the
 [CONVENTIONS.md](CONVENTIONS.md#deployment-artifacts) deployment artifacts: the starter's Dockerfile and
-Helm chart (with the enrollment init container), signed deb and rpm packages, and a Windows MSI.
+Helm chart (with the enrollment init container), signed deb and rpm packages, and a Windows installer.
 Database migrations are forward-only goose files; bundles are versioned by payload type so agents can
 support the current and previous `apiVersion`.
 

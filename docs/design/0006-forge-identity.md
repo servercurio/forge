@@ -241,20 +241,24 @@ Measured on 2026-09-15 with throwaway modules (`go list -deps`, Go 1.27.1):
 | Module                                            | Version  | Linked modules | Use                          |
 |---------------------------------------------------|----------|----------------|------------------------------|
 | `github.com/go-jose/go-jose/v4`                    | v4.1.5   | 1              | JWS/JWT, JWKS, SA tokens     |
-| `github.com/miekg/pkcs11`                          | v1.1.2   | 1 (cgo)        | HSM and KMS signing          |
+| `github.com/miekg/pkcs11` (Linux, cgo)             | v1.1.2   | 1 (cgo)        | on-premises HSM and CloudHSM |
+| `aws-sdk-go-v2/service/kms`                        | v1.61.0  | 5              | pure-Go KMS signing backend  |
 | `github.com/crewjam/saml`                          | v0.5.1   | 6              | SAML IdP                     |
 | `github.com/go-webauthn/webauthn`                  | v0.18.1  | 12             | WebAuthn verification        |
 | `golang.org/x/crypto` (`argon2`, `ocsp`)           | starter  | 0 new          | passwords, OCSP              |
 
 - **Starter stack kept** — Echo v5, pgx, bun, goose. swaggo is removed; the service serves the
   embedded `forge-api-schema` document (0002).
-- **PKCS#11 as the one HSM/KMS interface** — it covers on-premises HSMs, AWS CloudHSM
+- **Two signing backends, split by build** — `pkcs11` covers on-premises HSMs, AWS CloudHSM
   ([PKCS#11 library](https://docs.aws.amazon.com/cloudhsm/latest/userguide/pkcs11-library.html)), and
   Google Cloud KMS through `libkmsp11`
-  ([Cloud KMS PKCS#11](https://docs.cloud.google.com/kms/docs/reference/pkcs11-library)). The Google
-  Cloud KMS Go client links 32 modules including gRPC; the AWS KMS SDK links 15. A small
-  `crypto.Signer` adapter over `miekg/pkcs11` avoids `crypto11` (now `eclipse-keypont/crypto11` v1.6.8,
-  which adds `pkg/errors` and a pool module).
+  ([Cloud KMS PKCS#11](https://docs.cloud.google.com/kms/docs/reference/pkcs11-library)), but
+  `miekg/pkcs11` needs cgo, which rules it out of Windows and cross-compiled arm64 builds. It therefore
+  lives in `*_linux.go` files behind a cgo build tag, and every other build excludes it. Those builds
+  use `aws-kms`, a pure-Go backend on the AWS KMS SDK: measured at 5 linked modules and 3 MiB
+  (`go version -m`, Go 1.27.1, `linux/amd64`, `CGO_ENABLED=0`, stripped), against 32 linked modules
+  including gRPC for Google's Cloud KMS client. A small `crypto.Signer` adapter over `miekg/pkcs11`
+  avoids `crypto11` (now `eclipse-keypont/crypto11` v1.6.8, which adds `pkg/errors` and a pool module).
 - **crewjam/saml** is the only maintained Go SAML IdP found; its five published advisories are fixed
   in 0.4.14 or earlier, but its last tag is v0.5.1 and its `go.mod` pins `goxmldsig` v1.4.0 while
   v1.6.1 is current. Forge requires the current `goxmldsig`.
@@ -291,7 +295,8 @@ PostgreSQL through the starter's pgx, bun, and goose migrations. Every tenant-sc
 
 ### Security
 
-- **Key backends** — `pkcs11` (preferred) or `kek-sealed`. `kek-sealed` stores AES-256-GCM
+- **Key backends** — `pkcs11` (preferred, Linux cgo builds only), `aws-kms` (pure Go, every platform),
+  or `kek-sealed`. `kek-sealed` stores AES-256-GCM
   ciphertext with the key ID as associated data, and loads the KEK only from `kekFile` into memory.
   It calls `AllowLastResort("kek-sealed-ca-store")` for the CA key and
   `AllowLastResort("kek-sealed-signing-keys")` for token keys, so both are refused in `production`
@@ -338,6 +343,8 @@ Prefix `FORGE_IDENTITY_`, plus the starter's `server` and `database` blocks and 
 | `keys.pkcs11.module`               | `FORGE_IDENTITY_KEYS_PKCS11_MODULE`         | none                     |
 | `keys.pkcs11.tokenLabel`           | `FORGE_IDENTITY_KEYS_PKCS11_TOKEN_LABEL`    | none                     |
 | `keys.pkcs11.pinFile`              | `FORGE_IDENTITY_KEYS_PKCS11_PIN_FILE`       | none                     |
+| `keys.awsKms.keyId`                | `FORGE_IDENTITY_KEYS_AWS_KMS_KEY_ID`        | none                     |
+| `keys.awsKms.region`               | `FORGE_IDENTITY_KEYS_AWS_KMS_REGION`        | none                     |
 | `keys.kekFile`                     | `FORGE_IDENTITY_KEYS_KEK_FILE`              | none                     |
 | `ca.intermediateCertFile`          | `FORGE_IDENTITY_CA_INTERMEDIATE_CERT_FILE`  | none — required          |
 | `tokens.accessTtl`                 | `FORGE_IDENTITY_TOKENS_ACCESS_TTL`          | `10m`                    |
@@ -358,15 +365,19 @@ than one service.
 
 - Bootstrap from `go-echo-starter`; replace its logging with `forge-common` and its OpenAPI generator
   with the embedded contract.
-- `miekg/pkcs11` requires cgo, so release binaries and images build with `CGO_ENABLED=1` against
-  glibc; whether the starter's Taskfile builds with cgo today is unverified.
+- **Builds** — the `pkcs11` backend is compiled only into the Linux `amd64` and `arm64` binaries built
+  natively with `CGO_ENABLED=1` against glibc, through `*_linux.go` files behind a cgo build tag.
+  Windows and cross-compiled builds use `CGO_ENABLED=0` and ship `aws-kms` and `kek-sealed` only, so
+  the Windows installer (0005) needs no cgo toolchain. Whether the starter's Taskfile builds with cgo
+  today is unverified.
 - `v0.x` until accepted; API versions follow [0002](0002-forge-api-schema.md).
 
 ### Testing
 
 - **Protocol** — the [OpenID Foundation conformance suite](https://openid.net/certification/) in a
   300-series workflow for the Basic and Config OP profiles.
-- **CA** — SoftHSM2 in CI for the `pkcs11` backend; issuance, renewal, and revocation with a fake
+- **CA** — SoftHSM2 in the Linux cgo job for the `pkcs11` backend, and a fake KMS for `aws-kms`;
+  issuance, renewal, and revocation with a fake
   clock; chains verified through `forge-sdk` `pkg/tlsconfig`.
 - **Enrollment** — concurrent redemption of one token succeeds exactly once; wrong environment, tenant,
   and expired tokens fail. Service account tokens from kind and synthetic issuers fail with a wrong
@@ -434,7 +445,9 @@ than one service.
   [security advisories](https://github.com/crewjam/saml/security/advisories),
   [goxmldsig](https://github.com/russellhaering/goxmldsig),
   [go-webauthn](https://github.com/go-webauthn/webauthn).
-- [AWS CloudHSM PKCS#11 library](https://docs.aws.amazon.com/cloudhsm/latest/userguide/pkcs11-library.html);
+- [AWS CloudHSM PKCS#11 library](https://docs.aws.amazon.com/cloudhsm/latest/userguide/pkcs11-library.html),
+  [AWS KMS SDK for Go](https://pkg.go.dev/github.com/aws/aws-sdk-go-v2/service/kms),
+  [Go build constraints](https://pkg.go.dev/cmd/go#hdr-Build_constraints);
   [Cloud KMS PKCS#11 library](https://docs.cloud.google.com/kms/docs/reference/pkcs11-library).
 - [OWASP Password Storage Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html).
 - [`golang.org/x/crypto/ocsp`](https://pkg.go.dev/golang.org/x/crypto/ocsp) and

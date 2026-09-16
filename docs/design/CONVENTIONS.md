@@ -149,7 +149,9 @@ Forge deploys to Kubernetes, Docker/Podman hosts, and supported operating system
   container that uses the same image and the pod's projected service account token.
 - **Linux packages** — signed deb and rpm packages with a hardened systemd unit, for Enterprise Linux and
   Debian/Ubuntu LTS on amd64 and arm64.
-- **Windows package** — a signed MSI that installs the service as a Windows service on Windows Server.
+- **Windows package** — a signed [NSIS](https://nsis.sourceforge.io) installer (`.exe`,
+  Authenticode-signed) that installs the service as a Windows service on Windows Server. NSIS is
+  zlib/libpng licensed and builds on Linux runners.
 
 Quadlet units and Compose files are rendered by `forge-infrastructure` roles, not kept in service
 repositories. Configuration, health probes, and enrollment behave the same on every target; only the

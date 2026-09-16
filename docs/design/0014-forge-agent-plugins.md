@@ -333,8 +333,10 @@ spec:
    TUF-verified trusted root. The agent binary still links no verifier
    ([0012](0012-forge-agent.md#sigstore-verifier-measurements)).
 4. **Compatibility** — the manifest's `protocolVersions` must overlap the agent's.
-5. **Install** — into a root-owned `…/plugins/<name>/<sha256>/`, keeping the previous digest for
-   rollback. Every launch pins that digest through `SecureConfig`.
+5. **Install** — atomically into the root-owned `…/plugins/<name>/forge-plugin-<name>`, with its digest
+   written beside it as `forge-plugin-<name>.sha256` (0012). One binary per plugin: rolling back means
+   pinning the older version in the bundle, which re-downloads and re-verifies it. Every launch pins
+   the digest through `SecureConfig`.
 
 Core plugins take a different path: `forge-agent`'s packaging consumes `sigstore` and `sysfacts` from a
 release pinned by version and per-platform SHA-256, verifying the core envelopes and cosign bundles

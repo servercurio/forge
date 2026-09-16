@@ -235,7 +235,9 @@ privileges:
 - **Modes** — the grant's `mode` selects entries: the validator runs as `refresh` (from `serve`) or
   `verify` (from the executor, never with network).
 - **Enforcement** — `serve.Granted(ctx)` exposes the allowlist so plugin HTTP clients refuse other
-  destinations; the OS boundary is the agent's (0012).
+  destinations. The OS boundary is the agent's and is per platform (0012): a transient systemd unit
+  with `IPAddressAllow=` on Linux, per-program outbound firewall rules on Windows, and no OS boundary
+  on macOS, where the in-plugin allowlist is all there is.
 
 #### Environment check
 
@@ -280,7 +282,7 @@ calls `plugin.Serve` with gRPC only. `Options.Verifier` registers `VerifierServi
 ```go
 p, err := host.Launch(ctx, host.Config{
     Name:   "packages",
-    Path:   "/var/lib/forge-agent/plugins/packages/<sha256>/forge-plugin-packages",
+    Path:   "/var/lib/forge-agent/plugins/packages/forge-plugin-packages",
     SHA256: digest,                             // from the verified install record (0012)
     Env:    map[string]string{"FORGE_PLUGIN_PACKAGES_LOG_LEVEL": "info"},
     Stderr: logSink,                            // receives the plugin's JSON log lines
@@ -325,8 +327,9 @@ span per plugin RPC. The plugin extracts the remote context, so `forge-common`'s
   `SecureConfig`, `AutoMTLS`, `SkipHostEnv`) each link the same **14 modules** on linux and windows:
   `go-plugin`, `go-hclog`, `yamux`, `oklog/run`, `fatih/color`, `mattn/go-colorable`,
   `mattn/go-isatty`, `golang/protobuf`, `grpc`, `protobuf`, `genproto/googleapis/rpc`, `x/net`,
-  `x/sys`, and `x/text`. `go list -m all` reports 61. `jhump/protoreflect` is required but not linked.
-  A stripped linux/amd64 plugin binary was 12.6 MB.
+  `x/sys`, and `x/text`. `go list -m all` reports 43 for the probe module. `jhump/protoreflect` is
+  required but not linked. Both binaries were 12 MiB stripped (18 MiB unstripped); 0012's tables use
+  the same measurement.
 - **gRPC floor** — go-plugin v1.8.0 requires gRPC v1.61.0 and protobuf v1.36.6. The SDK requires
   current versions, so minimal version selection gives every plugin current security fixes.
 - **Not in the SDK** — `sigstore-go` v1.3.0: its verifier links 71 modules, including gRPC,
@@ -356,8 +359,9 @@ None; only in-memory grant and environment state per plugin process.
   and `verifier:*` in any other manifest are refused, so a non-core plugin can never provide the
   verifier behind install decisions.
 - **`SecureConfig` gap** — go-plugin hashes `Path`, then executes `Path`, so a writer could swap the
-  file in between. 0012's root-owned, content-addressed install directories and the writable-path
-  refusal close that window in practice.
+  file in between. 0012's root-owned store (`plugins/<name>/`, `0555`, with the digest in a `.sha256`
+  sidecar re-checked against the bundle pin at launch) and the writable-path refusal close that window
+  in practice.
 - **Clean environment** — plugins never receive the agent's variables, certificate, key, or token, and
   have no path to `forge-gateway`.
 - **Untrusted replies** — the agent validates and size-caps facts and verifier replies, and never shows

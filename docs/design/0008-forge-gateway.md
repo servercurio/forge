@@ -304,7 +304,7 @@ omitted here.
 - **Deployment** — the gateway ships every artifact in
   [CONVENTIONS — Deployment artifacts](CONVENTIONS.md#deployment-artifacts): the signed multi-arch image,
   the starter's Helm chart in `charts/forge-gateway/` with the enrollment init container, signed deb and
-  rpm packages with a hardened systemd unit, and a signed MSI. [0005](0005-forge-infrastructure.md)
+  rpm packages with a hardened systemd unit, and a signed NSIS installer. [0005](0005-forge-infrastructure.md)
   deploys them to Kubernetes, container, and OS targets with Ansible.
 - **Versioning** — `v0.x`, per [CONVENTIONS.md](CONVENTIONS.md).
 
