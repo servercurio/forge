@@ -215,13 +215,32 @@ every 6 hours and changed-digest deltas every 5 minutes go to `forge-inventory` 
   sandbox: a hostile plugin can open its own socket and bypass the proxy. The trust basis stays the
   signed plugin and the capability grant the operator approved; the proxy stops an honest plugin from
   reaching an ungranted destination and makes every attempt visible.
-- **Optional OS hardening** — operators may add `IPAddressAllow=localhost` beside the executor's
-  `IPAddressDeny=any`, or per-program outbound firewall rules on Windows
-  ([New-NetFirewallRule](https://learn.microsoft.com/en-us/powershell/module/netsecurity/new-netfirewallrule)),
-  so only the loopback proxy is reachable. Forge neither requires nor relies on them: systemd's IP
-  filtering silently does nothing without eBPF cgroup support
-  ([systemd.resource-control](https://www.freedesktop.org/software/systemd/man/latest/systemd.resource-control.html)),
-  and macOS has no equivalent.
+- **OS controls, shipped and optional** — the agent can also express each grant as native OS policy, so
+  a bypass attempt fails in the kernel rather than only in the log. `osControls.mode` selects `off`
+  (default), `check`, or `apply`; nothing touches host firewall state unless an operator sets `apply`.
+  The definitions are derived from the accepted bundle, so they follow grant changes without
+  hand-maintained templates:
+  - **Executor lockdown** — `IPAddressDeny=any` with `IPAddressAllow=localhost` in a drop-in under
+    `<unit>.d/`, which systemd merges after the unit file
+    ([systemd.unit](https://www.freedesktop.org/software/systemd/man/latest/systemd.unit.html)); a block
+    rule on the executor binary on Windows; the pf equivalent on macOS. Only the loopback proxy stays
+    reachable.
+  - **Per-plugin grant rules** — one rule set per plugin holding a network grant, including the
+    validator's TUF egress: transient-unit properties on Linux
+    ([systemd.resource-control](https://www.freedesktop.org/software/systemd/man/latest/systemd.resource-control.html)),
+    `New-NetFirewallRule -Program` with `-RemoteAddress` and `-RemotePort` on Windows
+    ([New-NetFirewallRule](https://learn.microsoft.com/en-us/powershell/module/netsecurity/new-netfirewallrule)),
+    and on macOS a pf anchor keyed on the plugin's user, since pf matches `user <user>` against the
+    socket's owner ([pf.conf](https://keith.github.io/xcode-man-pages/pf.conf.5.html)).
+  - **Regeneration** — on every accepted bundle whose grants differ, `apply` mode rewrites and reloads
+    the definitions before the affected plugin launches, and refuses to launch it if that fails, so a
+    grant is never left enforced only in the proxy when the operator asked for OS policy.
+  - **Verification** — `forge-agent os-controls check` (also what `check` mode runs) compares live OS
+    state with the generated definitions and reports drift without changing anything, for CI and the
+    control node (0005).
+
+  These controls harden the proxy; they do not replace it. systemd's IP filtering silently does nothing
+  without eBPF cgroup support, which `check` reports as drift rather than assuming enforcement.
 - **Supervision** — restart with exponential backoff; quarantine after 5 crashes in 10 minutes, reported
   as a condition.
 
@@ -389,6 +408,7 @@ Prefix `FORGE_AGENT_`; the gateway client uses `FORGE_AGENT_GATEWAY_*` per 0003.
 | `plugins.sigstore.tufMirror`          | `FORGE_AGENT_PLUGINS_SIGSTORE_TUF_MIRROR`           | `https://tuf-repo-cdn.sigstore.dev`   |
 | `plugins.sigstore.tufRefreshInterval` | `FORGE_AGENT_PLUGINS_SIGSTORE_TUF_REFRESH_INTERVAL` | `24h`                                 |
 | `outbox.maxBytes`                     | `FORGE_AGENT_OUTBOX_MAX_BYTES`                      | `52428800`                            |
+| `osControls.mode`                     | `FORGE_AGENT_OS_CONTROLS_MODE`                      | `off` (`check`, `apply`)              |
 
 - **Air-gapped hosts** — proposed: `tufMirror` accepts an internal `https://` URL, or a `file://`
   directory populated out of band, for which `refresh` mode gets a read-only path grant and no network.
