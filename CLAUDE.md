@@ -58,4 +58,5 @@ project repositories, not here.
 - Keep the repository minimal. Don't scaffold a full Hugo site, vendor a theme, or add tooling
   unless the task explicitly asks for it.
 - `docs/images/logo.svg` is the shared Server Curio brand mark with the "Forge" wordmark. Don't restyle
-  the mark itself; only the tagline text differs from sibling repositories.
+  the mark itself; only the tagline text differs from sibling repositories. `docs/images/logo-mark.svg`
+  is the same mark without the wordmark — its paths must stay byte-identical to `logo.svg`.

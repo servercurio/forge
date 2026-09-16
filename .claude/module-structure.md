@@ -11,7 +11,8 @@ directories as they are first needed rather than adding empty placeholders.
 ## Present today
 
 - `docs/` — Non-site documentation assets. The canonical brand mark lives at `images/logo.svg`. The README and
-  the future site reference this logo.
+  the future site reference this logo. `images/logo-mark.svg` is the SC mark alone (same paths, no
+  wordmark or tagline) for square and small-format uses such as favicons and avatars.
 - `docs/design/` — Numbered design documents (`NNNN-<slug>.md`), indexed by `design/README.md` and
   started from `design/TEMPLATE.md`.
 - `.github/workflows/` — CI workflows. `200-flow-pull-request-formatting.yaml` validates PR titles

@@ -27,6 +27,7 @@ this foundation.
 - `.gitignore` — Hugo / Node / editor / OS ignore rules
 - `docs/design/` — design documents and RFCs (numeric-prefix series)
 - `docs/images/logo.svg` — canonical brand mark
+- `docs/images/logo-mark.svg` — SC mark only (no wordmark), for square and small-format uses
 - `LICENSE` — Apache License 2.0
 
 ## Getting started
