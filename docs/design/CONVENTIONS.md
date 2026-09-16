@@ -22,6 +22,11 @@ convention says so under Alternatives considered and links the convention it bre
 | 0006 | `forge-identity`       | 0013 | `forge-agent-plugin-sdk` |
 | 0007 | `forge-sso`            | 0014 | `forge-agent-plugins`    |
 | 0008 | `forge-gateway`        | 0015 | `forge-plugin-starter`   |
+| 0016 | *web UI architecture*  | 0018 | `forge-console`          |
+| 0017 | `forge-portal`         | 0019 | *brand identity*         |
+
+0016 and 0019 describe no single repository, so they are named for their subject rather than for a
+module, as 0001 is.
 
 - File `NNNN-forge-<name>.md`, title `# NNNN — forge-<name>`, header and sections from
   [`TEMPLATE.md`](TEMPLATE.md). Proposal subsections, in order, as they apply: Responsibilities;

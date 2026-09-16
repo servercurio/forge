@@ -29,7 +29,8 @@ tokens are environment-bound ([Environment identity](0001-project-repositories.m
 **Goals**
 
 - A small, server-rendered login site that meets WCAG 2.2 AA and works without JavaScript except for
-  WebAuthn.
+  WebAuthn. Its stack is fixed by [0016](0016-web-ui-architecture.md) and its visual system by
+  [0019](0019-brand-identity.md).
 - Federation with external OIDC and SAML IdPs, configured per tenant.
 - A `forge-cli` login that never handles the user's password and pins the environment.
 - Hardening appropriate for the only Forge surface that anonymous browsers reach.
@@ -38,7 +39,8 @@ tokens are environment-bound ([Environment identity](0001-project-repositories.m
 
 - Issuing access, refresh, or API tokens, and storing accounts or sessions —
   [0006](0006-forge-identity.md).
-- Operator administration pages; configuration is through `forge-cli` and the identity API.
+- Operator administration pages — [0018](0018-forge-console.md) owns those, and
+  [0016](0016-web-ui-architecture.md) the stack they share with this site.
 - CLI profile storage — [0010](0010-forge-cli.md).
 
 ## Proposal

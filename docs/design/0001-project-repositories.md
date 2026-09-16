@@ -115,6 +115,8 @@ entry point, so managed hosts never share an ingress with administrators. See
 | `forge-agent-plugin-sdk` | Product domain · Shared library    | Plugin interface/contract + host-side helpers that every agent plugin builds against — the stable extension point for `forge-agent`                                                                                                                                                                                                           | `go-library-starter`             |
 | `forge-agent-plugins`    | Product domain · Plugin collection | First-party / officially-maintained agent plugin executables, built against `forge-agent-plugin-sdk`, including the core plugins (`sigstore` validator, `sysfacts`) bundled with `forge-agent`                                                                                                                                                | `go-cli-starter`                 |
 | `forge-plugin-starter`   | Product domain · Template          | Project-owned scaffold third parties clone to author a new agent plugin executable (pre-wired to `forge-agent-plugin-sdk`)                                                                                                                                                                                                                    | `go-cli-starter`                 |
+| `forge-portal`           | Platform · Go service + site       | Tenant-facing web portal: the endpoints a tenant owns, the desired state applied to them, and whether reality matches. Renders plans before they are applied. Holds no API token in the browser                                                                                                                                               | `go-echo-starter`                |
+| `forge-console`          | Platform · Go service + site       | Platform administration web console: tenants, identity and federation, the environment CA and key backend, agent enrollment, plugin publishers, and the audit chain. Holds the two-person approval queue                                                                                                                                      | `go-echo-starter`                |
 
 A few decisions are baked into the table above and worth calling out explicitly:
 
@@ -450,6 +452,9 @@ A suggested order that keeps each step shippable and unblocks the next:
 4. **First domain slice** — `forge-inventory` + a thin `forge-cli` path to prove the full request loop.
 5. **Enforcement** — `forge-provisioner`, then `forge-agent` and the plugin repos
    (`forge-agent-plugin-sdk`, `forge-agent-plugins`, `forge-plugin-starter`).
+6. **Browser surfaces** — `forge-portal` and `forge-console` ([0016](0016-web-ui-architecture.md)),
+   after the APIs they render exist. Neither is on the critical path: `forge-cli` covers every
+   operation, so the portals are additive.
 
 ## Resolved decisions
 
