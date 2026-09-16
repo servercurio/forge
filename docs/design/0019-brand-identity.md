@@ -265,8 +265,9 @@ Two lockups pair the mark with the wordmark, each in light and dark:
 The heritage mark is close to square (its ink measures 530 × 668, an aspect of 0.79), so in the
 horizontal lockup it is set to about 1.6 times the wordmark's cap height and centred on the wordmark's
 optical centre rather than its baseline; baseline alignment leaves it visibly high. The wordmark is
-Archivo 700, live text while the identity is in draft and converted to outlines before release, as the
-Server Curio wordmark already is.
+Archivo 700, outlined to path data as the Server Curio wordmark already is, so rendering never depends
+on an installed font. The wordmark is therefore not editable in place: changing it means regenerating
+the outlines from the font.
 
 - **Never** — put a light mark on a dark ground or the reverse, recolour outside the ramp, lock the Forge
   mark up with the Server Curio mark, stretch or condense it, or shrink heritage below its floor.
