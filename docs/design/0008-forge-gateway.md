@@ -241,8 +241,10 @@ from private networks.
 #### Header and response hygiene
 
 - **Inbound** — `X-Forge-*`, `Forwarded`, and `X-Forwarded-*` headers from clients are removed, and
-  `Cookie` is dropped because Forge APIs do not use cookies. CSRF and CORS middleware are off; no
-  browser origin calls the gateway (see Open questions).
+  `Cookie` is dropped because Forge APIs do not use cookies. CSRF and CORS middleware are off because no
+  browser origin calls the gateway. [0016](0016-web-ui-architecture.md) settles this: the web surfaces
+  are server-rendered relying parties that keep tokens server-side and call the gateway themselves, so a
+  browser never originates a cross-origin request to it and no token is ever exposed to one.
 - **Responses** — the starter's `Secure` middleware (HSTS, `nosniff`, frame denial) plus
   `Cache-Control: no-store`.
 - **Body limits** — 1 MiB on the operator ingress and 8 MiB on the agent ingress (inventory reports). Both
@@ -362,7 +364,6 @@ omitted here.
 - **Agent tenant lookup** — cache TTL, and whether disabling an agent in `forge-identity` should also
   revoke its certificate.
 - **Role names** in security requirements, or a dedicated `x-forge-permission` extension?
-- **Browser clients** — will a web console need CORS on the operator ingress?
 - **Rate limits** across replicas — are per-replica limits acceptable at expected scale?
 
 ## References

@@ -143,6 +143,15 @@ which requires `forge-sdk` to expose that client. Refresh tokens should rotate o
 [RFC 9700](https://www.rfc-editor.org/rfc/rfc9700) recommends for public clients. CI uses API tokens from
 `FORGE_CLI_GATEWAY_TOKEN_FILE`, never from flags or variable values.
 
+**Loopback callback.** [0016](0016-web-ui-architecture.md) adds a second method for the common case of a
+browser on the same machine. `forge-cli login --browser` binds `127.0.0.1:0` — a kernel-assigned port,
+never a fixed one — generates a PKCE verifier and `state`, and opens
+`/identity/oidc/<environment-id>/authorize` with `redirect_uri=http://127.0.0.1:<port>/callback`. The
+listener accepts exactly one request, checks `state`, exchanges the code, and stops on success, on error,
+or after 300 seconds. This is the method [RFC 8252 §7.3](https://www.rfc-editor.org/rfc/rfc8252#section-7.3)
+prescribes for native applications. The device grant stays the default and the automatic fallback when no
+listener can bind or no display is present, so SSH sessions are unaffected.
+
 #### Credential storage
 
 Entries are keyed `forge-cli/<environment-id>/<profile>`. Before attaching a token, the CLI checks that
@@ -332,8 +341,9 @@ profile supplies the `environment` and `gateway` blocks.
 
 - **Authorization code with PKCE and a loopback redirect** ([RFC 8252](https://www.rfc-editor.org/rfc/rfc8252)
   §7.3, [RFC 7636](https://www.rfc-editor.org/rfc/rfc7636)) — resists relayed-code phishing better, but
-  needs a browser on the same machine and fails over SSH. A candidate for 0007 to offer alongside the
-  device grant.
+  needs a browser on the same machine and fails over SSH. Adopted alongside the device grant as
+  `--browser` in [0016](0016-web-ui-architecture.md), with the device grant kept as the default and the
+  fallback.
 - **A hand-written RFC 8628 client** — zero modules instead of one, but more security-sensitive code to
   maintain.
 - **Device flow in `forge-sdk` `pkg/auth`** — reusable by third parties, but 0003 places interactive login

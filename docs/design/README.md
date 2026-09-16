@@ -26,6 +26,10 @@ alternatives considered, and tracks its status as the decision matures.
 | [0013](0013-forge-agent-plugin-sdk.md) | forge-agent-plugin-sdk | Draft  | 2026-09-15 |
 | [0014](0014-forge-agent-plugins.md)    | forge-agent-plugins    | Draft  | 2026-09-15 |
 | [0015](0015-forge-plugin-starter.md)   | forge-plugin-starter   | Draft  | 2026-09-15 |
+| [0016](0016-web-ui-architecture.md)    | Web UI architecture    | Draft  | 2026-09-16 |
+| [0017](0017-forge-portal.md)           | forge-portal           | Draft  | 2026-09-16 |
+| [0018](0018-forge-console.md)          | forge-console          | Draft  | 2026-09-16 |
+| [0019](0019-brand-identity.md)         | Brand identity         | Draft  | 2026-09-16 |
 
 ## Statuses
 
