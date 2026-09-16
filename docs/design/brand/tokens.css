@@ -1,0 +1,183 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+
+/*
+ * Forge design tokens.
+ *
+ * The brand ramp is lifted unchanged from docs/images/logo.svg: the mark is a
+ * heat gradient — plum at the cool outer ring, crimson at the working heat,
+ * warm sand for the sparks. Every UI colour below is derived from it.
+ *
+ * Contrast: every foreground/background pair defined here was measured against
+ * WCAG 2.1 relative luminance. Text pairs meet AA (4.5:1); control borders and
+ * focus rings meet 1.4.11 (3:1). Ratios are recorded beside each token.
+ *
+ * Theme resolution has three states. The bare :root block is the complete
+ * light palette. prefers-color-scheme redefines tokens only, guarded so an
+ * explicit light choice beats a dark OS. [data-theme="dark"] redefines them
+ * again so an explicit toggle wins in both directions.
+ */
+
+:root {
+  /* ---- Brand ramp — exact values from the mark, never restyled ---- */
+  --sc-anvil: #15090E; /* near-black, plum-biased */
+  --sc-plum: #4D1229; /* outer ring, "Curio" wordmark */
+  --sc-rose: #993744; /* middle ring, tagline */
+  --sc-ember: #B61F33; /* S-spiral, "Server" wordmark */
+  --sc-spark: #F7BB7A; /* the three spark dots */
+  --sc-quench: #FAF7F5; /* warm off-white */
+
+  /* ---- Neutrals — biased toward plum, never pure grey ---- */
+  --sc-neutral-00: #FFFFFF;
+  --sc-neutral-05: #FAF7F5;
+  --sc-neutral-10: #F2ECEA;
+  --sc-neutral-20: #E6DCDD;
+  --sc-neutral-40: #948089;
+  --sc-neutral-60: #6B5560;
+  --sc-neutral-80: #3D2730;
+  --sc-neutral-95: #2A1218;
+
+  /* ---- Surfaces ---- */
+  --bg: var(--sc-quench);
+  --surface: var(--sc-neutral-00);
+  --surface-sunken: var(--sc-neutral-10);
+
+  /* ---- Text ---- */
+  --text: var(--sc-neutral-95); /* 16.43:1 on bg  AAA */
+  --text-muted: var(--sc-neutral-60); /*  6.36:1 on bg  AA  */
+  --text-on-fill: var(--sc-neutral-00); /* 14.64:1 on plum AAA */
+
+  /* ---- Lines ---- */
+  --border: var(--sc-neutral-20); /* decorative rules only */
+  --border-strong: var(--sc-neutral-40); /*  3.45:1 on bg — inputs, controls */
+
+  /* ---- Action ---- *
+   * Plum carries primary actions, not ember. Crimson is both the brand colour
+   * and the conventional error colour; reserving ember for the mark and for
+   * critical state removes that collision instead of living with it. */
+  --action: var(--sc-plum); /* 13.73:1 on bg  AAA */
+  --action-hover: #3A0E1F;
+  --action-text: var(--sc-neutral-00);
+  --focus: var(--sc-ember); /*  6.09:1 on bg — focus ring */
+
+  /* ---- Semantic state ---- */
+  --ok: #17795E; /*  5.01:1 on bg  AA  */
+  --warn: #7E4E0F; /*  6.60:1 on bg  AA  */
+  --critical: var(--sc-ember); /*  6.09:1 on bg  AA  */
+  --unknown: var(--sc-neutral-60); /*  6.36:1 on bg  AA  */
+  --ok-fill: #E4F2ED;
+  --warn-fill: #F7EDDC;
+  --critical-fill: #F9E5E8;
+  --unknown-fill: var(--sc-neutral-10);
+
+  /* ---- Environment tiers ----
+   * Forge components are environment-aware (CONVENTIONS, "Environment"). The
+   * tier is shown on every authenticated surface, so it needs its own ramp. */
+  --tier-production: var(--sc-ember);
+  --tier-staging: #7E4E0F;
+  --tier-test: #17795E;
+  --tier-development: var(--sc-neutral-60);
+
+  /* ---- Type ---- */
+  --font-display: "Archivo", "Helvetica Neue", Arial, sans-serif;
+  --font-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* Type scale, 1.25 ratio from a 16px base */
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.25rem;
+  --text-xl: 1.563rem;
+  --text-2xl: 1.953rem;
+  --text-3xl: 2.441rem;
+  --text-4xl: 3.052rem;
+
+  /* ---- Space, radius, elevation ---- */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-12: 3rem;
+  --space-16: 4rem;
+
+  --radius-sm: 3px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+
+  --shadow-raised: 0 1px 2px rgba(21, 9, 14, 0.08), 0 2px 8px rgba(21, 9, 14, 0.04);
+  --shadow-overlay: 0 8px 28px rgba(21, 9, 14, 0.18);
+}
+
+/* Dark, for viewers on the system default (no stamp on the root element). */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: var(--sc-anvil);
+    --surface: #1F1016;
+    --surface-sunken: #100609;
+
+    --text: #F2E9E6; /* 15.36:1 on surface AAA */
+    --text-muted: #B39BA3; /*  7.11:1 on surface AAA */
+
+    --border: #37222A;
+    --border-strong: #7C5763; /*  3.16:1 on bg — inputs, controls */
+
+    --action: #D98A9B; /*  7.04:1 on surface AAA */
+    --action-hover: #E9A3B2;
+    --action-text: var(--sc-anvil); /*  7.48:1 — anvil label, never white */
+    --focus: var(--sc-spark); /* 10.79:1 on surface */
+
+    --ok: #4FBF9B; /*  8.09:1 on surface AAA */
+    --warn: #E0A355; /*  8.34:1 on surface AAA */
+    --critical: #EA5468; /*  5.22:1 on surface AA  */
+    --unknown: #B39BA3;
+    --ok-fill: #15332B;
+    --warn-fill: #33260F;
+    --critical-fill: #3A1620;
+    --unknown-fill: #2A1A20;
+
+    --tier-production: #EA5468;
+    --tier-staging: #E0A355;
+    --tier-test: #4FBF9B;
+    --tier-development: #B39BA3;
+
+    --shadow-raised: 0 1px 2px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
+    --shadow-overlay: 0 8px 28px rgba(0, 0, 0, 0.6);
+  }
+}
+
+/* Dark, chosen explicitly. Same values; wins over a light OS setting. */
+:root[data-theme="dark"] {
+  --bg: var(--sc-anvil);
+  --surface: #1F1016;
+  --surface-sunken: #100609;
+
+  --text: #F2E9E6;
+  --text-muted: #B39BA3;
+
+  --border: #37222A;
+  --border-strong: #7C5763;
+
+  --action: #D98A9B;
+  --action-hover: #E9A3B2;
+  --action-text: var(--sc-anvil);
+  --focus: var(--sc-spark);
+
+  --ok: #4FBF9B;
+  --warn: #E0A355;
+  --critical: #EA5468;
+  --unknown: #B39BA3;
+  --ok-fill: #15332B;
+  --warn-fill: #33260F;
+  --critical-fill: #3A1620;
+  --unknown-fill: #2A1A20;
+
+  --tier-production: #EA5468;
+  --tier-staging: #E0A355;
+  --tier-test: #4FBF9B;
+  --tier-development: #B39BA3;
+
+  --shadow-raised: 0 1px 2px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
+  --shadow-overlay: 0 8px 28px rgba(0, 0, 0, 0.6);
+}

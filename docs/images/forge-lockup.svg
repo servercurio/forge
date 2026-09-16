@@ -1,0 +1,19 @@
+<!--
+  ~ SPDX-License-Identifier: Apache-2.0
+-->
+
+<!--
+  ~ Forge product lockup. The mark is referenced from the heritage mark's own
+  ~ geometry so the two never diverge; only the wordmark lives here.
+  ~
+  ~ The wordmark is live text in Archivo while the identity is in draft. It is
+  ~ converted to outlines before release, as the Server Curio wordmark already
+  ~ is, so rendering never depends on an installed font.
+-->
+
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 360 140" width="360" height="140" role="img" aria-labelledby="forgelockup-t"><title id="forgelockup-t">Forge</title>
+  <g transform="translate(16 12.0) scale(0.1737) translate(-516.0 -226.0)">
+    <path d="M647.1 480.4 L573.2 484.3 M553.3 485.3 L535.3 486.3 M644.3 458.3 L557.4 444.5 M646.4 435.2 L551.1 398.7 M532.5 391.5 L515.7 385.0 M663.6 418.9 L556.3 349.2 M674.3 399.3 L624.8 349.8 M610.7 335.7 L598.0 323.0 M689.5 381.9 L643.8 311.5 M713.1 378.8 L673.7 276.1 M666.5 257.5 L660.0 240.7 M733.3 369.3 L713.9 246.8 M755.8 364.2 L759.3 298.2 M760.3 278.3 L761.3 260.3 M776.7 375.5 L800.5 286.6 M798.6 379.7 L846.7 285.2 M855.8 267.4 L864.0 251.4 M819.9 388.7 L895.4 295.5 M845.3 426.4 L923.7 386.5 M857.2 446.3 L955.7 419.9 M975.1 414.7 L992.4 410.0 M852.9 469.6 L980.7 462.9 M855.7 491.7 L924.8 502.7 M944.6 505.8 L962.4 508.6 M853.6 514.8 L932.0 544.9 M566 521 L629 503 M614 536 L658 515 M635 557 L671 531 M902 555 L863 530" fill="none" stroke="#993744" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/><path d="M762 448 L1027 230 Q1033 226 1037 233 L1044 244 Q1046 249 1040 254 L778 467 Z" fill="#993744"/><path d="M679 461 L726 421 Q730 418 734 423 L803 506 Q807 512 802 517 L758 552 Q754 555 749 550 L678 470 Q674 465 679 461 Z" fill="#4D1229"/><path d="M695 465 L727 438 M695 480 L747 541 M768 534 L789 516" fill="none" stroke="#993744" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><path d="M523 566 H844 V580 H523 Z" fill="#993744"/><path d="M523 587 H844 V659 C799 679 809 735 850 767 L878 772 Q890 774 894 806 H831 L811 795 H697 L680 809 H614 L619 782 Q621 772 634 772 H657 C689 736 697 691 672 663 C642 633 584 618 523 599 Z" fill="#4D1229"/><path d="M854 570 L875 574 V652 L854 656 Z" fill="#993744"/><path d="M884 575 L1025 562 Q1033 562 1027 574 C998 619 950 641 884 650 Z" fill="#4D1229"/><path d="M691 781 Q752 724 816 781 Q753 745 691 781 Z" fill="#993744"/>
+  </g>
+  <text x="134" y="93" fill="#4D1229" font-family="Archivo,'Helvetica Neue',Arial,sans-serif" font-size="74" font-weight="700" letter-spacing="-2">Forge</text>
+</svg>
