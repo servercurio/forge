@@ -229,9 +229,11 @@ privileges:
     - { host: tuf-repo-cdn.sigstore.dev, port: 443, mode: refresh }
 ```
 
-- **Defaults** — no plugin receives a network grant by default except the core validator in `refresh`
-  mode, where the agent may substitute a configured TUF mirror for the declared host (0012). Other
-  grants need operator policy.
+- **Defaults** — a manifest only requests; the agent grants. No plugin receives a network grant by
+  default except the core validator in `refresh` mode, where the agent may substitute a configured TUF
+  mirror for the declared host (0012). Every other grant must be listed in the agent's root-owned
+  `plugins.grants` configuration, which narrows the manifest's request and never widens it, so a
+  manifest asking for `{host: "*"}` reaches nothing until an operator names the hosts.
 - **Modes** — the grant's `mode` selects entries: the validator runs as `refresh` (from `serve`) or
   `verify` (from the executor, never with network).
 - **Enforcement** — the agent, not the OS, is the egress path: it runs a loopback proxy scoped to the
@@ -242,15 +244,18 @@ privileges:
 
 #### Environment check
 
-1. **Startup** — `serve.Main` validates the plugin's own `environment` block through `forge-common`.
-   `name`, `tier`, and `id` are required, and the plugin exits before the handshake if any is missing.
+1. **Startup** — `serve.Main` starts without environment configuration of its own; the agent supplies
+   name, tier, and ID in `Init`.
 2. **Gate** — until `Init` succeeds, every RPC except `GetManifest` and `Check` returns
    `FAILED_PRECONDITION` (`not_initialized`). `Init` is accepted once.
-3. **Compare** — `Init` compares the agent's name, tier, and ID with the plugin's. On a mismatch it
-   returns `PERMISSION_DENIED` (`environment_mismatch`), logs both IDs, and exits with code 78. `host`
-   returns `ErrEnvironmentMismatch`, so the agent does not restart the plugin in a loop.
-4. **Independence** — the agent's values come from enrollment and the plugin's from its own
-   configuration file. `host.Launch` refuses `Env` entries that set `<PREFIX>_ENVIRONMENT_*`.
+3. **Record** — `Init` records the environment for logging and for `serve.Environment(ctx)`. A plugin
+   that is separately configured with an environment (optional, and unusual) compares and returns
+   `PERMISSION_DENIED` (`environment_mismatch`), logging both IDs and exiting with code 78; `host`
+   returns `ErrEnvironmentMismatch` so the agent does not restart it in a loop.
+4. **One source** — the agent's values come from enrollment and are authoritative. `host.Launch`
+   refuses `Env` entries that set `<PREFIX>_ENVIRONMENT_*`, so the two paths cannot disagree. The
+   agent already controls the plugin binary, its arguments, and its environment, so a plugin-side copy
+   would add no boundary.
 
 #### Plugin side (`serve`)
 
@@ -392,11 +397,11 @@ mode, and only `plugintest` uses `development` fixtures.
 ### Configuration
 
 A plugin's prefix is `FORGE_PLUGIN_<NAME>`: the name upper-cased, hyphens as underscores. The SDK's
-config mounts under the child keys `environment` and `rpc`:
+config mounts under the child key `rpc`. The environment is not configurable here: the agent supplies
+name, tier, and ID in `Init`, and `host.Launch` refuses any `<PREFIX>_ENVIRONMENT_*` variable.
 
 | YAML                                 | Variable                                    | Default             |
 |--------------------------------------|---------------------------------------------|---------------------|
-| `environment.name` / `.tier` / `.id` | `FORGE_PLUGIN_<NAME>_ENVIRONMENT_NAME` / …  | none — required     |
 | `rpc.maxMessageBytes`                | `FORGE_PLUGIN_<NAME>_RPC_MAX_MESSAGE_BYTES` | `4194304`           |
 | `rpc.initTimeout`                    | `FORGE_PLUGIN_<NAME>_RPC_INIT_TIMEOUT`      | `30s`, then exit    |
 
@@ -453,9 +458,6 @@ config mounts under the child keys `environment` and `rpc`:
 
 ## Open questions
 
-- **Plugin environment source** — CONVENTIONS says plugins "receive" the environment from the agent,
-  but 0001 says they check it against their own configuration. Proposed: a root-owned
-  `/etc/forge/plugins/<name>.yaml` written by the host installer. Who writes it?
 - **Log writer** — 0004's `logging.Initialize` needs an option to write to stderr.
 - **Plugin spans** — no export (proposed), forwarding through the agent, or direct export with a network
   grant?

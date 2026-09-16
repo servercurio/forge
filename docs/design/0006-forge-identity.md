@@ -103,8 +103,12 @@ No implicit or password grants, following the OAuth 2.0 security BCP
 | `GET/POST/DELETE /identity/v1alpha1/api-tokens`               | operator   | bearer         |
 | `GET/POST /identity/v1alpha1/identity-providers`              | operator   | bearer         |
 | `POST /identity/v1alpha1/enrollment-tokens`                   | operator   | bearer         |
+| `GET/DELETE /identity/v1alpha1/enrollment-tokens`, `/{tokenId}` | operator | bearer         |
+| `GET /identity/v1alpha1/agents`, `/{agentId}`                 | operator   | bearer         |
+| `DELETE /identity/v1alpha1/agents/{agentId}`                  | operator   | bearer         |
+| `GET /identity/v1alpha1/agents/{agentId}`                     | internal   | mTLS, services |
 | `POST /identity/v1alpha1/agent-enrollments`                   | agent      | none           |
-| `POST /identity/v1alpha1/certificate-renewals`                | agent, internal | mTLS      |
+| `POST /identity/v1alpha1/certificate-renewals`                | agent, internal | mTLS; SPIFFE ID copied from the peer |
 | `POST /identity/v1alpha1/revocations`                         | operator   | bearer         |
 | `POST /identity/v1alpha1/service-enrollment-tokens`           | internal   | mTLS, control node only |
 | `POST /identity/v1alpha1/service-enrollments`                 | internal   | none           |
@@ -117,6 +121,13 @@ No implicit or password grants, following the OAuth 2.0 security BCP
 
 User codes, tokens, and passwords travel only in request bodies marked `x-forge-sensitive`, never in
 paths (CONVENTIONS). Tenancy comes from the token's principal, not the path (0002's proposal).
+
+The agent resource carries the agent ID, its tenant, host labels from the enrollment token, certificate
+serial and expiry, and enabled state. `forge-gateway` reads it as an `internal` operation to resolve an
+agent's tenant for `X-Forge-Principal` (0008), `forge-inventory` reads the host labels on first contact
+(0009), and `forge-cli` lists and revokes agents and enrollment tokens (0010). `DELETE` disables the
+agent and revokes its certificate in the same transaction, so disabling takes effect within the
+revocation cache window rather than at certificate expiry.
 
 #### Tokens
 
@@ -145,11 +156,19 @@ SHA-256 is stored.
 | Kind    | Bound to                                    | TTL default / max | Created by                |
 |---------|---------------------------------------------|-------------------|---------------------------|
 | agent   | environment, tenant, optional host labels   | 1h / 24h          | operator via `forge-cli`  |
-| service | environment, `service/<repository>`, host   | 15m / 1h          | control node certificate  |
+| service | environment, `service/<repository>`, host, CSR public key | 15m / 1h | control node certificate |
 
 Redemption is one
 `UPDATE … SET used_at = now() WHERE id = $1 AND used_at IS NULL AND expires_at > now() RETURNING …`
 in the enrollment transaction, so a token cannot be used twice.
+
+A service token is bound to a key, not only to a name: the control node generates the key pair on the
+target, registers `SHA-256(SubjectPublicKeyInfo)` when it requests the token, and `service-enrollments`
+refuses a CSR whose public key does not match. A stolen token is then useless without the private key
+that never left the host. This matters most for `service/forge-gateway`, whose certificate is what lets
+a peer assert `X-Forge-Principal` for any user or tenant (0008); issuing that identity additionally
+requires the token to be marked `approval: required`, redeemable only after a second operator approves
+it through `POST /identity/v1alpha1/service-enrollment-approvals`.
 
 #### Kubernetes service account enrollment
 
@@ -294,8 +313,20 @@ PostgreSQL through the starter's pgx, bun, and goose migrations. Every tenant-sc
 
 - Passwords use Argon2id at no less than OWASP's minimum, 19 MiB, 2 iterations, parallelism 1
   ([Password Storage Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html)).
-- The service's database role has no `UPDATE` or `DELETE` on `audit_events`; each row hashes the
-  previous one so tampering is detectable.
+- The service's database role has no `UPDATE` or `DELETE` on `audit_events`, which is the control that
+  stops the service from rewriting its own history. Each row also hashes the previous one, which alone
+  detects tampering only against a head recorded elsewhere, since a database superuser could recompute
+  the whole chain. So the head is anchored outside the database: every `audit.anchorInterval` the
+  service signs `{seq, hash, time, environmentId}` with its HSM or KMS key and writes it to append-only
+  storage in a different cloud account from the environment, under an object-lock or WORM retention
+  policy, using credentials that may only `PutObject` — no delete, overwrite, or read. An attacker who
+  takes the environment entirely therefore still cannot rewrite its audit history, because the account
+  holding the anchors is not one the environment's own credentials reach. The signing key is the one
+  input the database role cannot reach and the retention policy is what stops an anchor being replaced,
+  so detection no longer depends on a reader having saved an earlier head. A failed anchor write is
+  logged and retried rather than blocking audited operations, and the gap is itself visible in the
+  anchors as a missing interval. `forge-cli audit verify` ([0010](0010-forge-cli.md)) does the
+  comparison with read access to the anchor account alone.
 - `sealed_key` is populated only for the KEK-sealed backend.
 
 ### Security
@@ -360,6 +391,8 @@ Prefix `FORGE_IDENTITY_`, plus the starter's `server` and `database` blocks and 
 | `certificates.serviceLifetime`     | `FORGE_IDENTITY_CERTIFICATES_SERVICE_LIFETIME` | `168h` (fixed by 0001) |
 | `revocation.ocspNextUpdate`        | `FORGE_IDENTITY_REVOCATION_OCSP_NEXT_UPDATE`| `1h`                     |
 | `revocation.crlNextUpdate`         | `FORGE_IDENTITY_REVOCATION_CRL_NEXT_UPDATE` | `24h`                    |
+| `audit.anchorInterval`             | `FORGE_IDENTITY_AUDIT_ANCHOR_INTERVAL`      | `1h`                     |
+| `audit.anchor.uri`                 | `FORGE_IDENTITY_AUDIT_ANCHOR_URI`           | none — required in `production` |
 
 Validation rejects values beyond 0001's bounds: agent token TTL over 24 hours, agent certificates
 outside 30–90 days, or a service lifetime other than 7 days. It also rejects a
@@ -373,9 +406,14 @@ than one service.
 - **Builds** — release binaries are built natively per platform with `CGO_ENABLED=1`, on Linux
   `amd64`/`arm64`, Windows `amd64`, and macOS `arm64` runners, so `pkcs11` is available everywhere.
   That rules out cross-compiling arm64 from an amd64 runner: each OS and architecture needs its own
-  runner and C toolchain, and Linux builds link against glibc. A `CGO_ENABLED=0` build is still
-  possible for deployments that want no cgo, and ships `aws-kms` and `kek-sealed` only. Whether the
-  starter's Taskfile builds with cgo today is unverified.
+  runner and C toolchain. The OCI image is also a cgo build, produced per architecture on a native
+  runner rather than cross-compiled, so `pkcs11` — the default backend — works in the published
+  container. Linux binaries and the image link glibc, so they are built on the oldest target in the
+  support matrix — Enterprise Linux 9, glibc 2.34 ([0005](0005-forge-infrastructure.md)) — which keeps
+  them loadable on EL10, Debian 12 and 13, and Ubuntu 24.04 and 26.04, all of which ship a newer glibc.
+  Building on a newer glibc than the target host does not run there. A `CGO_ENABLED=0` build remains
+  available for deployments that want no cgo and ships `aws-kms` and `kek-sealed` only, which then must
+  be selected explicitly. Whether the starter's Taskfile builds with cgo today is unverified.
 - `v0.x` until accepted; API versions follow [0002](0002-forge-api-schema.md).
 
 ### Testing

@@ -284,7 +284,7 @@ as possible:
   The official OTLP exporters link 15 third-party modules, including gRPC, even when exporting over
   HTTP (measured on otel v1.46.0;
   [opentelemetry-go#2579](https://github.com/open-telemetry/opentelemetry-go/issues/2579)). The custom
-  exporter is estimated at about 8. Forge keeps this exporter permanently and owns its retries,
+  exporter measures 16 linked modules (0004). Forge keeps this exporter permanently and owns its retries,
   compression, TLS, and configuration.
 - **Environment** — every log event and exported telemetry resource carries the environment name; see
   [Environment awareness](#environment-awareness).
@@ -393,8 +393,8 @@ deployment:
   Service certificates last 7 days and renew automatically at two-thirds of their lifetime, with the
   same OCSP and CRL checks as agent certificates.
 - **Agents and plugins** — the enrollment token carries the environment ID, and the agent checks it
-  against the gateway's certificate before enrolling. The agent passes its environment ID to plugins,
-  which refuse to serve an agent from a different environment.
+  against the gateway's certificate before enrolling. The agent passes its environment ID to plugins in
+  the first RPC of the plugin protocol, and it is the only source of that value on the host.
 - **User and API tokens** — tokens from `forge-identity` and `forge-sso` are signed with keys belonging
   to the environment and carry its ID (e.g. in the issuer and audience claims), so a token from one
   environment is rejected in another.

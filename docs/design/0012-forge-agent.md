@@ -29,7 +29,8 @@ It reaches Forge only through the gateway's agent ingress via `forge-sdk`.
 
 **Goals**
 
-- Nothing that parses network input runs as root.
+- Nothing that terminates TLS or speaks to the network runs as root: the root executor parses only what
+  the unprivileged daemon has written to the spool, and treats it as untrusted until verified.
 - Idempotent, converge-then-verify enforcement that keeps working while offline.
 - Every plugin launch verified: core plugins by a DSSE statement signed with an embedded Forge key;
   other plugins by a SHA-256 pin from a provisioner-signed bundle and, before install, by the core
@@ -88,11 +89,20 @@ the host is re-enrolled.
 
 - **Pull** — `serve` long-polls `GET /provisioner/v1alpha1/directive-bundles/current` with
   `If-None-Match` and `waitSeconds=55`, with jittered backoff on errors (0011). It also fetches the
-  environment CRL (path per 0006) so the offline executor can check the signer.
+  environment CRL (path per 0006) so the offline executor can check the signer. The CRL is signed by the
+  environment CA, so the gateway cannot forge one; it could withhold a fresh one, which is why a CRL
+  older than its `nextUpdate` stops new bundles from being accepted, and why `revocation.crlUrl` may name
+  a source that does not pass through the gateway.
 - **Verify** (executor, fail closed): the DSSE signature; a signer chain to the environment roots
   evaluated at `issuedAt`; a signer SPIFFE ID of `spiffe://<environment-id>/service/forge-provisioner`,
   not revoked by a CRL whose `nextUpdate` has not passed; `environmentId` and `agentId` equal to the
-  recorded values; `generation` greater than the last accepted one (no rollback); and `now < notAfter`.
+  recorded values; `generation` greater than the last accepted one but not more than
+  `bundle.maxGenerationJump` (default 1000) beyond it, so a forged bundle cannot set it near the type's
+  maximum and wedge the host against every later legitimate generation; and `now < notAfter`. A
+  generation from a signer the CRL has since revoked is discarded rather than recorded as the floor. The
+  bundle's `coreKeyId` and revocation list are recorded with the same monotonicity: a bundle may move the
+  current core key forward or add revocations, never move back or drop them, so a replayed older bundle
+  cannot restore a retired or revoked key.
 - **Validate** each resource against its JSON Schema, embedded from `forge-api-schema`.
 - **Policy** — OPA evaluates, in order, the embedded agent baseline (for example, deny kinds disabled in
   local config), root-owned local policies in `/etc/forge-agent/policy.d/*.rego` that may only add
@@ -143,9 +153,11 @@ every 6 hours and changed-digest deltas every 5 minutes go to `forge-inventory` 
   verifies its [DSSE](https://github.com/secure-systems-lab/dsse/blob/master/protocol.md) envelope with
   the standard-library ECDSA code that already verifies bundles:
   - payload type exactly `application/vnd.forge.core-plugin.v1+json`, signed by an embedded key;
-  - payload `{name, version, platform, sha256, protocolVersions}` whose `name` is the plugin being
-    installed or launched, `platform` is the host's, `sha256` is the file's digest, and
-    `protocolVersions` overlaps the agent's.
+  - payload `{name, version, platform, sha256, protocolVersions, environmentIds}` whose `name` is the
+    plugin being installed or launched, `platform` is the host's, `sha256` is the file's digest,
+    `protocolVersions` overlaps the agent's, and `environmentIds` either lists the environment the host
+    is enrolled in or is the explicit wildcard `["*"]` for a general release. A statement scoped to
+    named environments cannot be replayed into another one.
 
   Binding the digest to name and platform stops a signed `sysfacts` from being installed as `sigstore`.
   The verified `sha256` is then pinned through `SecureConfig`. A newer core-signed build may be accepted
@@ -189,8 +201,9 @@ every 6 hours and changed-digest deltas every 5 minutes go to `forge-inventory` 
   bundle, and a core plugin's envelope must still verify. Then go-plugin launches with
   `SecureConfig{Checksum: pin, Hash: sha256.New()}`, `AllowedProtocols: [ProtocolGRPC]`, `AutoMTLS: true`,
   and `SkipHostEnv: true`.
-- **Environment** — the plugin's environment has `FORGE_PLUGIN_<NAME>_ENVIRONMENT_ID`, `_NAME`, and
-  `_TIER`, and 0013's first RPC repeats them. The plugin refuses a different ID.
+- **Environment** — the agent is the only source: name, tier, and ID reach the plugin in the `Init`
+  RPC (0013), never as `FORGE_PLUGIN_<NAME>_ENVIRONMENT_*` variables, which `host.Launch` refuses. A
+  plugin needs no environment configuration of its own to start.
 - **Privileges** — plugins run as the `forge-plugin` user by default (`SysProcAttr.Credential`). Root is
   granted only when local, root-owned config lists the plugin under `plugins.privileged`; a bundle cannot
   grant it. The validator never runs as root.
@@ -339,7 +352,11 @@ owned by the OS package manager.
 ### Security
 
 - **Privilege separation** — `serve` has no root and no write access to `state/` or `plugins/`. The
-  executor's systemd unit sets `IPAddressDeny=any` and `RestrictAddressFamilies=AF_UNIX`
+  executor's systemd unit sets `IPAddressDeny=any` with `IPAddressAllow=localhost`, and
+  `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6`. The address families must stay open: the agent's
+  egress proxy is a loopback TCP listener, and `RestrictAddressFamilies=AF_UNIX` alone would block it
+  for the executor and every plugin it forks, since the restriction is inherited and applies to the
+  socket family, not the address. `IPAddressDeny=any` is what keeps external egress out
   ([systemd.resource-control](https://www.freedesktop.org/software/systemd/man/latest/systemd.resource-control.html),
   [systemd.exec](https://www.freedesktop.org/software/systemd/man/latest/systemd.exec.html)). It acts only
   on bundles signed by the provisioner, so compromising `serve` or the gateway does not yield root.
@@ -352,8 +369,19 @@ owned by the OS package manager.
   the identity in its pin, which leaves a public record. Logs carry digests, key IDs, and identities,
   never key material.
 - **Core-plugin key** — only public keys are embedded. The private key signs only from the
-  `forge-agent-plugins` release workflow through the HSM or KMS, whose audit log records each use. A
-  stolen key could sign core plugins for every host, so rotation and revocation are open questions.
+  `forge-agent-plugins` release workflow through the HSM or KMS, whose audit log records each use.
+  Because a stolen key would otherwise reach every host, two limits apply: a core statement names the
+  environments it is valid for, and a revocation list of key IDs and plugin digests, signed by the other
+  embedded key and carried in the directive bundle, is applied before any core verification. A revoked
+  key or digest is refused even when its signature is valid, so recovery does not wait for an agent
+  release. Rotation travels the same path: the current and next public keys are both embedded, and the
+  bundle's `coreKeyId` names which is current (0011). The agent accepts core statements from the named
+  key and refuses the previous one once a bundle has moved forward. Introducing a third key still needs
+  an agent release, but making the next one current does not. Custody separates the two: the current key
+  signs only from the release workflow through the HSM or KMS, while the next key stays on an offline
+  HSM under split control. Activating it — or publishing the first bundle after a compromise — takes a
+  quorum of M of N release engineers and out-of-band approval, so no single compromised signer or
+  workflow can move every host, which is the property the two-key design exists for.
 - **Validator isolation** — the `forge-plugin` user, its own cgroup, no root, exec, or writes. `refresh`
   mode has only the TUF grant and no spool access; `verify` mode has no network. Its replies are
   size-capped, and an approval still needs the bundle pin.
@@ -370,6 +398,7 @@ reports, bundles, and plugins are all checked against the recorded ID.
 |----------------------------------------------------------|-------------------------------------------|------------------------|
 | File key store when no TPM                               | allowed, logged at `warn`                 | allowed                |
 | Local plugin not pinned by a bundle (`unpinned-plugins`) | refused in `production` unless overridden | allowed, logged        |
+| Signature verification (core statement, bundle pin)      | always required                           | always required        |
 | Local policy `print`, verbose plans                      | off                                       | on                     |
 
 ### Offline behavior
@@ -403,6 +432,7 @@ Prefix `FORGE_AGENT_`; the gateway client uses `FORGE_AGENT_GATEWAY_*` per 0003.
 | `enforce.disabledKinds`               | `FORGE_AGENT_ENFORCE_DISABLED_KINDS`                | empty                                 |
 | `inventory.fullInterval`              | `FORGE_AGENT_INVENTORY_FULL_INTERVAL`               | `6h`                                  |
 | `plugins.privileged`                  | YAML only                                           | empty                                 |
+| `plugins.grants`                      | YAML only                                           | empty (per plugin: network, paths)    |
 | `plugins.core.disabled`               | YAML only                                           | empty (`sigstore`, `sysfacts`)        |
 | `plugins.memoryMax`                   | `FORGE_AGENT_PLUGINS_MEMORY_MAX`                    | `256MiB`                              |
 | `plugins.sigstore.tufMirror`          | `FORGE_AGENT_PLUGINS_SIGSTORE_TUF_MIRROR`           | `https://tuf-repo-cdn.sigstore.dev`   |
@@ -471,15 +501,12 @@ Prefix `FORGE_AGENT_`; the gateway client uses `FORGE_AGENT_GATEWAY_*` per 0003.
 
 - **Plugin distribution** — how binaries reach the host: a gateway-served artifact route, or an OCI
   registry?
-- **CRL delivery** — does `pkg/revocation` accept an offline CRL source, and which route serves the CRL
-  on the agent ingress (0003, 0006, 0008)?
+- **CRL delivery** — which route serves the CRL on the agent ingress, and does `pkg/revocation` accept a
+  file or mirror source for the non-gateway path (0003, 0006, 0008)?
 - **macOS keys** — Secure Enclave needs cgo; is a file key store acceptable there?
 - **Windows service account model** — a virtual service account per service, and how the installer
   creates it.
 - **Agent ID** — assigned by `forge-identity` at enrollment (assumed) or derived from the key?
-- **Core key rotation and revocation** — when does the next key become current, and how is a
-  compromised core key revoked on hosts that trust it by embedding: only by an agent release, or also by
-  a revocation list signed with the other key and carried in bundles?
 - **Core plugin downgrades** — may a bundle pin a core-signed version older than the packaged one?
 - **Air-gapped TUF mirrors** — who copies Sigstore's repository into a mirror, how often (before
   timestamp metadata expires), and does `forge-infrastructure` own it? Private Sigstore deployments would
