@@ -234,10 +234,11 @@ privileges:
   grants need operator policy.
 - **Modes** — the grant's `mode` selects entries: the validator runs as `refresh` (from `serve`) or
   `verify` (from the executor, never with network).
-- **Enforcement** — `serve.Granted(ctx)` exposes the allowlist so plugin HTTP clients refuse other
-  destinations. The OS boundary is the agent's and is per platform (0012): a transient systemd unit
-  with `IPAddressAllow=` on Linux, per-program outbound firewall rules on Windows, and no OS boundary
-  on macOS, where the in-plugin allowlist is all there is.
+- **Enforcement** — the agent, not the OS, is the egress path: it runs a loopback proxy scoped to the
+  grant and passes it in `Init` and through `HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY`, so the same rules
+  hold on Linux, Windows, and macOS (0012). `serve.Granted(ctx)` exposes the allowlist so a plugin's
+  own clients refuse other destinations first. Neither check contains hostile code, which is why the
+  grant is only given to signed plugins the operator approved.
 
 #### Environment check
 

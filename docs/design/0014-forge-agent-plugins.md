@@ -180,7 +180,7 @@ Plugins keep no state. Installed binaries on hosts belong to 0012.
 - **Parsers** — `os-release`, `dpkg-query`, `rpm`, and `systemctl show` output are fuzzed against golden
   fixtures, and `sigstore` fuzzes bundle and TUF metadata inputs.
 - **Validator** — no root, exec, or writes. Network only in `refresh` mode, to its granted TUF host; in
-  `verify` mode any network use is a bug the agent's sandbox also blocks (0012).
+  `verify` mode any network use is a bug: the agent gives it no proxy, so the attempt fails (0012).
 - **Supply chain** — SHA-pinned actions and `harden-runner`, as in the starter. `id-token: write` only
   in the release job. `CODEOWNERS` on `.github/workflows/`, since whoever changes the signing workflow
   controls what the identity signs. `govulncheck` and CodeQL.

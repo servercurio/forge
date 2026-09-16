@@ -194,27 +194,34 @@ every 6 hours and changed-digest deltas every 5 minutes go to `forge-inventory` 
 - **Privileges** — plugins run as the `forge-plugin` user by default (`SysProcAttr.Credential`). Root is
   granted only when local, root-owned config lists the plugin under `plugins.privileged`; a bundle cannot
   grant it. The validator never runs as root.
-- **Limits** — on Linux, a plugin without a network grant starts directly in its own child cgroup
-  (`SysProcAttr.UseCgroupFD`) under the executor's delegated subtree, with `memory.max`, `cpu.max`, and
-  `pids.max`; the executor unit's `IPAddressDeny=any` also constrains these child cgroups, so `verify`
-  mode has no network. On Windows, a Job Object (`CreateJobObject`,
-  `JOBOBJECT_EXTENDED_LIMIT_INFORMATION`). On macOS, `setrlimit` only.
-- **Network-granted plugins** — a plugin whose grant includes network (`packages`, and the validator's
-  `refresh` mode) is never launched inside the executor's unit, which stays at `IPAddressDeny=any`.
-  go-plugin's `RunnerFunc` starts it under a per-platform sandbox instead, so the grant is enforced by
-  the OS rather than by the plugin:
-  - **Linux** — its own transient systemd unit with the same user and cgroup limits and
-    `IPAddressAllow=` restricted to the grant.
-  - **Windows** — the plugin runs as its own service account, and the installer keeps a default-deny
-    outbound firewall rule over the plugin directory plus one allow rule per grant, scoped by
-    `-Program` with `-RemoteAddress` and `-RemotePort`
-    ([New-NetFirewallRule](https://learn.microsoft.com/en-us/powershell/module/netsecurity/new-netfirewallrule)).
-    A block rule on the executor's binary gives it the same no-network property `IPAddressDeny=` gives
-    on Linux. Rules are scoped to a program path, not a process, so two plugins must never share a
-    binary path.
-  - **macOS** — the base OS has no per-process egress control, so only the plugin's own allowlist
-    applies. Network grants on macOS are therefore not an OS boundary; no first-party plugin ships for
-    macOS today (0014), and a host that needs one should not grant network there.
+- **Limits** — on Linux, each plugin starts in its own child cgroup (`SysProcAttr.UseCgroupFD`) under
+  the executor's delegated subtree, with `memory.max`, `cpu.max`, and `pids.max`. On Windows, a Job
+  Object (`CreateJobObject`, `JOBOBJECT_EXTENDED_LIMIT_INFORMATION`). On macOS, `setrlimit` only.
+- **Network grants, enforced by the agent** — the agent is the egress path; it relies on no OS network
+  feature, so the rules are identical on Linux, Windows, and macOS. For each plugin process with a
+  network grant (`packages`, and the validator's `refresh` mode), the agent starts a proxy bound to
+  loopback on an ephemeral port, authorized by a per-process token, that accepts only the `{host,
+  port}` pairs in that grant and refuses every other destination, redirect, and CONNECT target. It
+  passes the proxy to the plugin two ways:
+  - the SDK's client uses it through `Init` (0013), and
+  - `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY` are set in the plugin's environment, so tools the
+    plugin execs follow it too: apt supports `http_proxy` for system-wide configuration
+    ([apt-transport-http](https://manpages.ubuntu.com/manpages/noble/en/man1/apt-transport-http.1.html)),
+    dnf honors the curl variables when its own `proxy` option is unset
+    ([dnf.conf](https://dnf.readthedocs.io/en/latest/conf_ref.html)), and Go clients follow
+    [`http.ProxyFromEnvironment`](https://pkg.go.dev/net/http#ProxyFromEnvironment).
+
+  Refused requests are logged with the plugin name and destination. This is agent policy, not a
+  sandbox: a hostile plugin can open its own socket and bypass the proxy. The trust basis stays the
+  signed plugin and the capability grant the operator approved; the proxy stops an honest plugin from
+  reaching an ungranted destination and makes every attempt visible.
+- **Optional OS hardening** — operators may add `IPAddressAllow=localhost` beside the executor's
+  `IPAddressDeny=any`, or per-program outbound firewall rules on Windows
+  ([New-NetFirewallRule](https://learn.microsoft.com/en-us/powershell/module/netsecurity/new-netfirewallrule)),
+  so only the loopback proxy is reachable. Forge neither requires nor relies on them: systemd's IP
+  filtering silently does nothing without eBPF cgroup support
+  ([systemd.resource-control](https://www.freedesktop.org/software/systemd/man/latest/systemd.resource-control.html)),
+  and macOS has no equivalent.
 - **Supervision** — restart with exponential backoff; quarantine after 5 crashes in 10 minutes, reported
   as a condition.
 
@@ -459,11 +466,9 @@ Prefix `FORGE_AGENT_`; the gateway client uses `FORGE_AGENT_GATEWAY_*` per 0003.
   need a different embedded root.
 - **Re-validation on trusted-root change** — re-verify installed plugins and block failures (proposed);
   should a failure also stop a running plugin?
-- **Network grant enforcement** — neither `IPAddressAllow=` nor a firewall rule's `-RemoteAddress`
-  takes host names, so a grant like `{host: "*"}` for package mirrors needs resolved ranges, an egress
-  proxy, or a firewall set. Which, and who maintains it?
-- **macOS network grants** — leave them unenforced by the OS (proposed), refuse them outright, or add a
-  packet-filter anchor?
+- **Wildcard grants** — the agent's proxy matches the grant's host names directly, so `{host: "*"}` for
+  package mirrors grants any destination. Narrow it to the mirrors an operator configures, or keep the
+  wildcard and rely on the audit log?
 
 ## References
 
