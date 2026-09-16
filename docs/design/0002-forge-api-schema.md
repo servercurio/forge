@@ -202,7 +202,9 @@ people. `errors` follows the shape of RFC 9457's own example. `traceId` connects
 - **`conformance` module** — [kin-openapi](https://github.com/getkin/kin-openapi) v0.149.0 to validate
   examples against operations, and
   [santhosh-tekuri/jsonschema/v6](https://github.com/santhosh-tekuri/jsonschema) v6.0.3 for desired-state
-  schemas. Its `go.mod` requires only `golang.org/x/text`, plus `dlclark/regexp2` for its own tests.
+  schemas. jsonschema's `go.mod` requires only `golang.org/x/text`, plus `dlclark/regexp2` for its own
+  tests; kin-openapi additionally requires `go-openapi/jsonpointer`, `gorilla/mux`, `oasdiff/yaml`,
+  `oasdiff/yaml3`, and `jsonschema/v6`, which is why both stay in the nested module.
 - **Tools** (not in `go.mod`) — [oapi-codegen](https://github.com/oapi-codegen/oapi-codegen) v2.8.0,
   [oasdiff](https://github.com/oasdiff/oasdiff) v1.32.0, [vacuum](https://github.com/daveshanley/vacuum)
   v0.30.6.

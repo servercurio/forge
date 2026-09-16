@@ -180,7 +180,9 @@ templates in step with the pinned generator version, which the drift check catch
 - **Nothing else in the root module.** No `forge-common`, zerolog, OpenTelemetry, gRPC, `go-spiffe` (whose
   [`go.mod`](https://github.com/spiffe/go-spiffe/blob/main/go.mod) requires `google.golang.org/grpc`), or
   `oapi-codegen/runtime`. A CI allowlist on `go list -deps` keeps it that way.
-- **Nested modules** — `conformance` uses kin-openapi v0.149.0; `examples` uses `forge-common`.
+- **Nested modules** — `conformance` uses kin-openapi v0.149.0, which brings `go-openapi/jsonpointer`,
+  `gorilla/mux`, `oasdiff/yaml`, `oasdiff/yaml3`, and `jsonschema/v6` with it; `examples` uses
+  `forge-common`.
 - **Consumers** — `forge-cli`, `forge-agent`, `forge-gateway`, and every service (for identity packages
   and service-to-service clients), plus third parties.
 

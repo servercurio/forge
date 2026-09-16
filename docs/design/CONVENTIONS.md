@@ -117,7 +117,8 @@ convention says so under Alternatives considered and links the convention it bre
   last-resort feature names).
 - `name` and `tier` are required everywhere. `id` and `caBundle` are required wherever a component makes
   or accepts mutual-TLS connections, and `id` must match the trust domain of the bundle's roots.
-  `forge-agent` records all four from enrollment; plugins receive them from the agent.
+  `forge-agent` records all four from enrollment; plugins receive them from the agent in `Init` and
+  carry no environment configuration of their own.
 - Tier logic goes through `forge-common`'s `environment` package: `Hardened()` is true for `production`
   and `staging`; last-resort features call `AllowLastResort("<feature>")`, which refuses in `production`
   unless the kebab-case feature name is in `overrides`, and logs every override at `warn`.
@@ -144,7 +145,9 @@ Forge deploys to Kubernetes, Docker/Podman hosts, and supported operating system
 ([0001](0001-project-repositories.md#forges-own-infrastructure)), so every service repository ships:
 
 - **OCI image** — multi-architecture (`linux/amd64`, `linux/arm64`), non-root, referenced by digest, and
-  signed; used by the Kubernetes, Podman, and Docker targets.
+  signed; used by the Kubernetes, Podman, and Docker targets. A service that needs cgo (`forge-identity`,
+  for PKCS#11) builds each architecture on a native runner instead of cross-compiling, on the oldest
+  glibc in the support matrix (Enterprise Linux 9, glibc 2.34).
 - **Helm chart** — in `charts/<repository>/`, as in `go-echo-starter`, including an enrollment init
   container that uses the same image and the pod's projected service account token.
 - **Linux packages** — signed deb and rpm packages with a hardened systemd unit, for Enterprise Linux and

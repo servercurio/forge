@@ -130,6 +130,15 @@ chain. It is signed with the provisioner's own service key, whose certificate ca
 days), `mode`, rendered resources, `host`-phase policies and scripts, and plugin pins (name, version,
 SHA-256, and publisher identity) taken only from verified plugin imports (below). 0001 relies on this
 signature for plugin pins.
+
+Two environment-wide fields ride along for core plugins ([0012](0012-forge-agent.md)): `coreKeyId`,
+naming the embedded core public key agents treat as current, and `coreRevocations`, a list of core key
+IDs and plugin digests. `coreRevocations` is signed by the other embedded core key and copied into the
+payload verbatim, so a compromised provisioner can neither forge a revocation nor drop one an agent has
+already recorded. `coreKeyId` carries only the provisioner's signature, but an agent accepts it solely
+when it names a key the agent already embeds and never moves it backwards, so the worst a compromised
+provisioner achieves is retiring the current key early — a denial of service that fails closed, not a
+route to an attacker's key.
 OPA on the host catches a stale or out-of-policy directive,
 and the signature lets the agent reject one forged by a compromised gateway. DSSE needs only
 standard-library ECDSA and an estimated (unmeasured) 50 lines of code, so it adds no module.
@@ -293,6 +302,13 @@ key.
 Credentials for devices are **never** stored here or in bundles: `credentialRef` names a secret that a
 `SecretProvider` resolves at apply time. The first provider reads files mounted by
 `forge-infrastructure`.
+
+A `credentialRef` is resolved within the writing tenant only: the provider reads
+`<secrets.directory>/<tenantId>/<name>`, rejects any `name` containing a path separator or `..`, and
+refuses a reference from a different tenant even when the file exists. Without that scoping a tenant
+could name another tenant's device credential and receive it at apply time. The same process evaluates
+tenant-authored Rego and Tengo, so credentials are resolved in the driver at apply time and never
+placed in a policy input, a script value, or a rendered resource.
 
 ### Security
 

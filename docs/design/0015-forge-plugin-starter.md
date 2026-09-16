@@ -87,9 +87,9 @@ Removed from `go-cli-starter`:
   `<stateDir>/markers/<name>`, and `Apply` writes it atomically, showing idempotence that stays inside
   the plugin's own directory.
 - **Manifest** — `capabilities: [facts, "resource:plugins.example.com/v1alpha1/Marker"]`,
-  `privileges: { runAsRoot: false, execPaths: [], writePaths: [/var/lib/forge-plugin-example],
-  network: [] }`, and `platforms: [linux/amd64, linux/arm64]`. It never sets `core: true`; the agent
-  refuses that without a core signature (0013).
+  `privileges: { runAsRoot: false, execPaths: [], network: [] }`, and
+  `platforms: [linux/amd64, linux/arm64]`. It never sets `core: true`; the agent refuses that without a
+  core signature (0013).
 - **Rename** — `task rename -- -name acme-backup -module github.com/acme/forge-plugin-acme-backup`
   (plus `-group` for the example kind; runs `go run ./tools/rename`) rewrites the module path, `cmd/`,
   `FORGE_PLUGIN_EXAMPLE` → `FORGE_PLUGIN_ACME_BACKUP`, the manifest, the schema `$id`, workflow
@@ -98,7 +98,8 @@ Removed from `go-cli-starter`:
 
 #### Configuration
 
-The starter's loading order: defaults → YAML file (0013's fixed path) → `FORGE_PLUGIN_<NAME>_*` → flags.
+The starter's loading order: defaults → YAML file → `FORGE_PLUGIN_<NAME>_*` → flags. The environment
+(name, tier, ID) is not configured here: the agent supplies it in `Init` (0013).
 
 | YAML                                 | Variable                                    | Default                         |
 |--------------------------------------|---------------------------------------------|---------------------------------|

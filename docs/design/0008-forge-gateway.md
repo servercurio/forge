@@ -68,8 +68,9 @@ limits, and principal propagation to this document ([0002](0002-forge-api-schema
 | `health`   | 8080         | none, private address only | none; `/livez`, `/readyz`, `/healthz` only    |
 
 Both TLS listeners serve the gateway's service certificate,
-`spiffe://<environment-id>/service/forge-gateway`, issued by `forge-identity` and renewed by `forge-sdk`'s `enroll.Renewer`. `forge-sdk` clients refuse a
-gateway without that ID ([0003](0003-forge-sdk.md)). The operator certificate also needs the public DNS
+`spiffe://<environment-id>/service/forge-gateway`, issued by `forge-identity` and renewed by
+`forge-sdk`'s `enroll.Renewer`. `forge-sdk` clients refuse a gateway without that ID
+([0003](0003-forge-sdk.md)). The operator certificate also needs the public DNS
 names as SANs (see Open questions). The starter's hardened TLS 1.2 configuration
 (`hardenedTLSConfig` in `go-echo-starter`) is kept for the operator listener. The starter's plain-HTTP
 redirect and ACME `autocert` paths are removed. Both TLS listeners must sit behind TCP pass-through load
@@ -96,10 +97,13 @@ documentation warns about.
 
 Two non-contract route families exist. `GET /gateway/v1alpha1/environment` returns
 `{ "id", "name", "tier" }` without authentication, so `forge-cli` can record a profile's name and tier
-after pinning the certificate ([0010](0010-forge-cli.md)). The `/sso/` family, proposed as
-`/sso/oauth2/device-authorization`, `/sso/oauth2/token`, and `/sso/oauth2/revoke`, is passed to
-`forge-sso`, which owns those protocol endpoints ([0007](0007-forge-sso.md) decides). This keeps every
-credential exchange on the environment-pinned host.
+after pinning the certificate ([0010](0010-forge-cli.md)). The second is the OIDC, SAML, and PKI family
+under `/identity/`, which `forge-identity` owns and serves (0006): the issuer's `/authorize`, `/token`,
+`/device-authorization`, `/revoke`, `/.well-known/openid-configuration`, and `/jwks.json`, the SAML
+bindings, and `/identity/pki/<environment-id>/{ca.pem,crl.der,ocsp}`. The gateway proxies them by path
+prefix rather than from the contract, because they are standards-defined and deliberately outside it
+(0002). `forge-sso` serves only browser routes and holds no token-signing keys (0007), so no token
+endpoint is routed to it. This keeps every credential exchange on the environment-pinned host.
 
 #### Reverse proxy
 
@@ -355,7 +359,6 @@ omitted here.
   `pkg/principal` belong in `forge-sdk`?
 - **Unauthenticated operations** — 0002's lint allowlist names only enrollment and health. Add
   `GET /gateway/v1alpha1/environment`?
-- **SSO routing** — does [0007](0007-forge-sso.md) accept `/sso/` token endpoints behind the gateway?
 - **Agent tenant lookup** — cache TTL, and whether disabling an agent in `forge-identity` should also
   revoke its certificate.
 - **Role names** in security requirements, or a dedicated `x-forge-permission` extension?

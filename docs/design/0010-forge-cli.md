@@ -72,6 +72,7 @@ forge-cli
 ├── enrollment-token  create | list | revoke ID
 ├── agent             list | get ID | revoke ID      (forge-identity)
 ├── api-token         create | list | revoke ID      (forge-identity)
+├── audit             verify [--since TIME]          (forge-identity)
 ├── completion        bash | zsh | fish | powershell
 └── version
 ```
@@ -82,6 +83,10 @@ forge-cli
   total.
 - **`forge-sdk` only.** API calls go only through `forge-sdk`'s generated clients. The single exception is
   the OAuth exchange, which uses the SDK's pinned `*http.Client` (see Login).
+- **`audit verify`** — reads the signed anchors from the store named by `audit.anchor.uri` and the event
+  chain from `forge-identity`, recomputes the hashes, and reports the first sequence where they diverge
+  or an interval with no anchor. It needs read access to the anchor account only, never the database, so
+  the check does not depend on the service being honest ([0006](0006-forge-identity.md)).
 - **Later commands** — provisioner commands arrive with [0011](0011-forge-provisioner.md).
 
 #### Profiles
@@ -121,12 +126,14 @@ profiles:
 Proposed for [0007](0007-forge-sso.md) to accept or replace: **the OAuth 2.0 device authorization grant**
 ([RFC 8628](https://www.rfc-editor.org/rfc/rfc8628)), with `forge-cli` as a public client.
 
-1. After `profile verify`, the CLI POSTs to `/sso/oauth2/device-authorization` on the gateway's operator
-   ingress. The request uses the environment-pinned connection, and the gateway forwards it to `forge-sso`.
+1. After `profile verify`, the CLI POSTs to `/identity/oidc/<environment-id>/device-authorization` on the
+   gateway's operator ingress. The request uses the environment-pinned connection, and the gateway
+   proxies it to `forge-identity`, which owns the protocol endpoints (0006).
 2. It prints the `verification_uri` and `user_code` to stderr and opens a browser unless `--no-browser` is
    set or no display is available. The user confirms the environment name that `forge-sso` shows next to
    the code, which mitigates RFC 8628's remote-phishing risk (§5.4).
-3. It polls `/sso/oauth2/token` at the server's `interval`, handling `slow_down`, until approval, denial,
+3. It polls `/identity/oidc/<environment-id>/token` at the server's `interval`, handling `slow_down`,
+   until approval, denial,
    or expiry.
 4. It stores the access token and refresh token under a key bound to the environment ID (below).
 
@@ -158,7 +165,8 @@ one environment's token to another.
   found, `forge-cli` fails with an explanation. The operator must choose `--credential-store file`, which
   calls `AllowLastResort("plaintext-credential-file")`, refused in `production` unless listed in
   `FORGE_CLI_ENVIRONMENT_OVERRIDES`.
-- **Logout** revokes the refresh token at `/sso/oauth2/revoke`, then deletes the entries even if
+- **Logout** revokes the refresh token at `/identity/oidc/<environment-id>/revoke`, then deletes the
+  entries even if
   revocation fails, and says so.
 
 #### Enrollment tokens
