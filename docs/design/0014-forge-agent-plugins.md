@@ -180,7 +180,7 @@ Plugins keep no state. Installed binaries on hosts belong to 0012.
 - **Parsers** — `os-release`, `dpkg-query`, `rpm`, and `systemctl show` output are fuzzed against golden
   fixtures, and `sigstore` fuzzes bundle and TUF metadata inputs.
 - **Validator** — no root, exec, or writes. Network only in `refresh` mode, to its granted TUF host; in
-  `verify` mode any network use is a bug the agent's sandbox also blocks (0012).
+  `verify` mode any network use is a bug: the agent gives it no proxy, so the attempt fails (0012).
 - **Supply chain** — SHA-pinned actions and `harden-runner`, as in the starter. `id-token: write` only
   in the release job. `CODEOWNERS` on `.github/workflows/`, since whoever changes the signing workflow
   controls what the identity signs. `govulncheck` and CodeQL.
@@ -333,8 +333,10 @@ spec:
    TUF-verified trusted root. The agent binary still links no verifier
    ([0012](0012-forge-agent.md#sigstore-verifier-measurements)).
 4. **Compatibility** — the manifest's `protocolVersions` must overlap the agent's.
-5. **Install** — into a root-owned `…/plugins/<name>/<sha256>/`, keeping the previous digest for
-   rollback. Every launch pins that digest through `SecureConfig`.
+5. **Install** — atomically into the root-owned `…/plugins/<name>/forge-plugin-<name>`, with its digest
+   written beside it as `forge-plugin-<name>.sha256` (0012). One binary per plugin: rolling back means
+   pinning the older version in the bundle, which re-downloads and re-verifies it. Every launch pins
+   the digest through `SecureConfig`.
 
 Core plugins take a different path: `forge-agent`'s packaging consumes `sigstore` and `sysfacts` from a
 release pinned by version and per-platform SHA-256, verifying the core envelopes and cosign bundles

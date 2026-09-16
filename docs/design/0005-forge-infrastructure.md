@@ -10,7 +10,7 @@
 - **Summary:** `forge-infrastructure` is an Ansible project that deploys Forge's own services to three
   target types from one inventory per environment: Kubernetes (each service's Helm chart), containers
   (Podman Quadlet or Docker Compose), and the operating system directly (signed deb and rpm packages
-  under systemd, or MSI-installed Windows services). Conftest checks inventories and all rendered Helm,
+  under systemd, or NSIS-installed Windows services). Conftest checks inventories and all rendered Helm,
   Compose, and Quadlet output in pull-request CI, and a dedicated control node runs signed, merged
   commits. It defines the environment key ceremony, including Kubernetes cluster issuer registration,
   and how each target bootstraps service certificates.
@@ -48,7 +48,7 @@ tokens to containers and hosts, while pods enroll with projected service account
 
 - Managing customer endpoints — that is `forge-provisioner` and `forge-agent`.
 - Certificate issuance, token formats, and token verification — [0006](0006-forge-identity.md).
-- Building images, charts, packages, and MSIs — each service repository, per CONVENTIONS.
+- Building images, charts, packages, and Windows installers — each service repository, per CONVENTIONS.
 - Creating clusters, installing operating systems, and choosing a telemetry backend; this repository
   starts from a reachable namespace or host and deploys only an in-environment OTLP collector.
 
@@ -72,10 +72,10 @@ tokens to containers and hosts, while pods enroll with projected service account
 | `podman`     | Quadlet `.container` unit under systemd | `forge_target_quadlet`  | image            | single-use token     |
 | `docker`     | Compose project under systemd           | `forge_target_compose`  | image            | single-use token     |
 | `package`    | deb or rpm with its systemd unit        | `forge_target_packages` | deb / rpm        | single-use token     |
-| `msi`        | Windows service                         | `forge_target_windows`  | MSI              | single-use token     |
+| `windows`    | Windows service                         | `forge_target_windows`  | NSIS installer   | single-use token     |
 
 `package` supports Enterprise Linux 9 and 10, Debian 12 and 13, and Ubuntu 24.04 and 26.04 LTS on amd64
-and arm64; `msi` supports Windows Server 2022 and 2025 ([endoflife.date](https://endoflife.date)).
+and arm64; `windows` supports Windows Server 2022 and 2025 ([endoflife.date](https://endoflife.date)).
 Kubernetes follows the upstream window of three minors, 1.35–1.37 today
 ([Releases](https://kubernetes.io/releases/)).
 
@@ -107,7 +107,7 @@ described below, and `deployment.yaml` selects targets. Services may differ — 
 
 ```yaml
 forge_deployment:
-  defaultTarget: kubernetes          # kubernetes | podman | docker | package | msi
+  defaultTarget: kubernetes          # kubernetes | podman | docker | package | windows
   services:
     forge-gateway: { target: package, hosts: gateway }
   clusters:
@@ -125,7 +125,8 @@ forge_deployment:
 #### Consuming service artifacts
 
 `artifacts.yaml` pins each service's version, image `@sha256:` digest, SHA-256 of the chart and of each
-deb, rpm, and MSI, and its highest migration (`schemaVersion`). The control node downloads release assets
+deb, rpm, and Windows installer, and its highest migration (`schemaVersion`). The control node downloads
+release assets
 to a local cache, checks the SHA-256 from Git, and verifies publisher signatures before any target sees
 them: cosign for images, the starter's GPG-signed chart checksum
 ([go-echo-starter `.releaserc.json`](https://github.com/servercurio/go-echo-starter/blob/main/.releaserc.json)),
@@ -146,7 +147,7 @@ secrets, so CI renders every inventory without credentials. Conftest reads:
   ([podman-systemd.unit](https://docs.podman.io/en/latest/markdown/podman-systemd.unit.5.html));
 - `docker` — `compose.yaml` after `docker compose config`;
 - `package` — the systemd drop-in model, and the unit extracted from the verified package;
-- `msi` — the service configuration and MSI install properties.
+- `windows` — the service configuration and installer switches.
 
 #### Pinned toolchain
 
@@ -165,7 +166,7 @@ Checked on 2026-09-15 from GitHub releases and the [Galaxy API](https://galaxy.a
 `kubernetes.core` 6.4.0 and 6.5.0 add Helm v4 support and map `atomic` to `--rollback-on-failure`
 ([changelog](https://github.com/ansible-collections/kubernetes.core/blob/main/CHANGELOG.rst)). Service
 repositories use [nFPM](https://github.com/goreleaser/nfpm/releases) v2.47.0 and
-[WiX Toolset](https://github.com/wixtoolset/wix/releases) v7.0.0. Collections and Helm are baked into the
+[NSIS](https://nsis.sourceforge.io) v3. Collections and Helm are baked into the
 execution environment image, pinned by digest; Dependabot does not cover Galaxy (unverified), so a
 100-series workflow proposes bumps.
 
@@ -181,7 +182,7 @@ on role and playbook YAML; the rest run on rendered output. Initial rule set (pr
 | inventory  | every service resolves to a known target; `kubernetes` services name a listed cluster      |
 | inventory  | cluster `jwks` fingerprints match the environment's ceremony record                        |
 | inventory  | `forge-identity` and PostgreSQL never bind public interfaces or public load balancers     |
-| inventory  | images pinned by `@sha256:`; charts, packages, MSIs by SHA-256; `schemaVersion` never drops |
+| inventory  | images pinned by `@sha256:`; charts, packages, installers by SHA-256; `schemaVersion` never drops |
 | inventory  | `production`: no `kek-sealed` or other last-resort feature without an override            |
 | inventory  | service token TTL ≤ 1h; service certificates exactly 7 days; secrets are references only  |
 | content    | secret-using tasks set `no_log`; `shell` has `changed_when`; no `validate_certs: false`     |
@@ -221,7 +222,7 @@ across a `schemaVersion` change. Otherwise rollback is a reverted commit applied
 | `podman`     | new unit with the new digest, `daemon-reload`, restart                                    |
 | `docker`     | `community.docker.docker_compose_v2` with `wait: true`                                    |
 | `package`    | `apt` or `dnf` install of the verified file with downgrades allowed, restart              |
-| `msi`        | `ansible.windows.win_package`; MSIs set `MajorUpgrade` `AllowDowngrades` for rollback     |
+| `windows`    | `ansible.windows.win_package` with `product_id` and `creates_*`; reinstall to roll back   |
 
 ### Dependencies
 
@@ -276,7 +277,7 @@ use the KEK-sealed intermediate store, gated as in 0006.
 other service enrolls with a CSR through `forge-sdk` `pkg/enroll` ([0003](0003-forge-sdk.md)), keeps an
 ECDSA P-256 key, and renews at two-thirds of its 7-day lifetime with the same OCSP and CRL checks.
 
-**Containers and operating systems** (`podman`, `docker`, `package`, `msi`):
+**Containers and operating systems** (`podman`, `docker`, `package`, `windows`):
 
 1. If the instance's certificate has less than a third of its lifetime left, or none exists, the control
    node calls `forge-identity` over mutual TLS with its control-node certificate for a service enrollment
@@ -367,7 +368,7 @@ commit. Tags `vX.Y.Z` mark execution environment image releases, built with ansi
   OS family on `ubuntu-24.04` and `ubuntu-24.04-arm` runners
   ([runner images](https://github.com/actions/runner-images)), with idempotence, upgrade, and rollback
   (Molecule driver details unverified).
-- **Windows** — MSI install, upgrade, downgrade, and service start on `windows-2025` and `windows-2022`
+- **Windows** — installer install, upgrade, downgrade, and service start on `windows-2025` and `windows-2022`
   runners; `forge_target_windows` nightly against disposable Windows Server VMs over SSH.
 - **End to end** — a disposable `development` inventory per target nightly, with a simulated ceremony
   using SoftHSM, cluster registration, and enrollment of every service.
@@ -401,9 +402,7 @@ commit. Tags `vX.Y.Z` mark execution environment image releases, built with ansi
 - **Pod deletion** — offline verification cannot see a deleted pod, whose certificate stays valid for up
   to 7 days after its key is gone. Acceptable, or revoke on deletion?
 - **Artifact verifiers** — tooling for deb, rpm, and Authenticode signatures, and cosign for charts?
-- **WiX licensing** — WiX requires an Open Source Maintenance Fee for revenue-generating use
-  ([WiX README](https://github.com/wixtoolset/wix)). Acceptable, or another MSI toolchain?
-- **`forge-identity` on Windows** — its PKCS#11 backend needs cgo (0006); is an MSI for it in scope?
+- **Authenticode signing** — which certificate signs the Windows installers, and where does it live?
 - **Control-node certificate lapse** — recover by root ceremony, or have two control nodes cross-renew?
 - **Secrets** — Vault, cloud managers, or both? On Kubernetes, Secrets or a Secrets Store CSI driver?
 - **Intermediate revocation** — should peers check the root CRL for the intermediate, and who publishes
@@ -429,7 +428,8 @@ commit. Tags `vX.Y.Z` mark execution environment image releases, built with ansi
   [Compose secrets](https://docs.docker.com/compose/how-tos/use-secrets/),
   [Docker security](https://docs.docker.com/engine/security/),
   [systemd.exec](https://www.freedesktop.org/software/systemd/man/latest/systemd.exec.html).
-- [nFPM](https://nfpm.goreleaser.com), [WiX `MajorUpgrade`](https://docs.firegiant.com/wix/schema/wxs/majorupgrade/),
+- [nFPM](https://nfpm.goreleaser.com), [NSIS](https://nsis.sourceforge.io) (zlib/libpng licensed),
+  [`ansible.windows.win_package`](https://docs.ansible.com/ansible/latest/collections/ansible/windows/win_package_module.html),
   [runner images](https://github.com/actions/runner-images), [endoflife.date](https://endoflife.date).
 - [Go `crypto/x509` constraints](https://github.com/golang/go/blob/master/src/crypto/x509/constraints.go)
   (Go 1.27.1 source); [SPIFFE ID](https://github.com/spiffe/spiffe/blob/main/standards/SPIFFE-ID.md),

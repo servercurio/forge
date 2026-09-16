@@ -123,11 +123,13 @@ every 6 hours and changed-digest deltas every 5 minutes go to `forge-inventory` 
 
 #### Plugin host
 
-- **Store** — `/var/lib/forge-agent/plugins/sha256/<digest>/<name>`, root-owned, `0555`. go-plugin's
+- **Store** — `/var/lib/forge-agent/plugins/<name>/forge-plugin-<name>`, with its digest beside it in
+  `forge-plugin-<name>.sha256`; the directory and both files are root-owned and `0555`. go-plugin's
   `SecureConfig.Check` hashes `cmd.Path` and then execs that path
   ([client.go L662](https://github.com/hashicorp/go-plugin/blob/v1.8.0/client.go#L662),
   [L735](https://github.com/hashicorp/go-plugin/blob/v1.8.0/client.go#L735)), so a writable store would
-  leave a swap window. Nothing but root can write this store.
+  leave a swap window between the two. Nothing but root can write this store, and every launch
+  re-reads the sidecar digest and re-checks it against the accepted bundle pin before the hash.
 - **Core plugins** — `sigstore` (`forge-plugin-sigstore`, the Sigstore validator) and `sysfacts` are
   built in [0014](0014-forge-agent-plugins.md) and ship in every agent package under
   `/usr/lib/forge-agent/plugins/<name>/`, each beside its `<asset>.core.dsse.json` envelope, root-owned
@@ -192,11 +194,53 @@ every 6 hours and changed-digest deltas every 5 minutes go to `forge-inventory` 
 - **Privileges** — plugins run as the `forge-plugin` user by default (`SysProcAttr.Credential`). Root is
   granted only when local, root-owned config lists the plugin under `plugins.privileged`; a bundle cannot
   grant it. The validator never runs as root.
-- **Limits** — on Linux, each plugin starts directly in its own child cgroup (`SysProcAttr.UseCgroupFD`)
-  under the executor's delegated subtree, with `memory.max`, `cpu.max`, and `pids.max`; the executor
-  unit's `IPAddressDeny=any` also constrains plugins in these child cgroups, so `verify` mode has no
-  network. On Windows, a Job Object (`CreateJobObject`, `JOBOBJECT_EXTENDED_LIMIT_INFORMATION`). On
-  macOS, `setrlimit` only.
+- **Limits** — on Linux, each plugin starts in its own child cgroup (`SysProcAttr.UseCgroupFD`) under
+  the executor's delegated subtree, with `memory.max`, `cpu.max`, and `pids.max`. On Windows, a Job
+  Object (`CreateJobObject`, `JOBOBJECT_EXTENDED_LIMIT_INFORMATION`). On macOS, `setrlimit` only.
+- **Network grants, enforced by the agent** — the agent is the egress path; it relies on no OS network
+  feature, so the rules are identical on Linux, Windows, and macOS. For each plugin process with a
+  network grant (`packages`, and the validator's `refresh` mode), the agent starts a proxy bound to
+  loopback on an ephemeral port, authorized by a per-process token, that accepts only the `{host,
+  port}` pairs in that grant and refuses every other destination, redirect, and CONNECT target. It
+  passes the proxy to the plugin two ways:
+  - the SDK's client uses it through `Init` (0013), and
+  - `HTTP_PROXY`, `HTTPS_PROXY`, and `NO_PROXY` are set in the plugin's environment, so tools the
+    plugin execs follow it too: apt supports `http_proxy` for system-wide configuration
+    ([apt-transport-http](https://manpages.ubuntu.com/manpages/noble/en/man1/apt-transport-http.1.html)),
+    dnf honors the curl variables when its own `proxy` option is unset
+    ([dnf.conf](https://dnf.readthedocs.io/en/latest/conf_ref.html)), and Go clients follow
+    [`http.ProxyFromEnvironment`](https://pkg.go.dev/net/http#ProxyFromEnvironment).
+
+  Refused requests are logged with the plugin name and destination. This is agent policy, not a
+  sandbox: a hostile plugin can open its own socket and bypass the proxy. The trust basis stays the
+  signed plugin and the capability grant the operator approved; the proxy stops an honest plugin from
+  reaching an ungranted destination and makes every attempt visible.
+- **OS controls, shipped and optional** — the agent can also express each grant as native OS policy, so
+  a bypass attempt fails in the kernel rather than only in the log. `osControls.mode` selects `off`
+  (default), `check`, or `apply`; nothing touches host firewall state unless an operator sets `apply`.
+  The definitions are derived from the accepted bundle, so they follow grant changes without
+  hand-maintained templates:
+  - **Executor lockdown** — `IPAddressDeny=any` with `IPAddressAllow=localhost` in a drop-in under
+    `<unit>.d/`, which systemd merges after the unit file
+    ([systemd.unit](https://www.freedesktop.org/software/systemd/man/latest/systemd.unit.html)); a block
+    rule on the executor binary on Windows; the pf equivalent on macOS. Only the loopback proxy stays
+    reachable.
+  - **Per-plugin grant rules** — one rule set per plugin holding a network grant, including the
+    validator's TUF egress: transient-unit properties on Linux
+    ([systemd.resource-control](https://www.freedesktop.org/software/systemd/man/latest/systemd.resource-control.html)),
+    `New-NetFirewallRule -Program` with `-RemoteAddress` and `-RemotePort` on Windows
+    ([New-NetFirewallRule](https://learn.microsoft.com/en-us/powershell/module/netsecurity/new-netfirewallrule)),
+    and on macOS a pf anchor keyed on the plugin's user, since pf matches `user <user>` against the
+    socket's owner ([pf.conf](https://keith.github.io/xcode-man-pages/pf.conf.5.html)).
+  - **Regeneration** — on every accepted bundle whose grants differ, `apply` mode rewrites and reloads
+    the definitions before the affected plugin launches, and refuses to launch it if that fails, so a
+    grant is never left enforced only in the proxy when the operator asked for OS policy.
+  - **Verification** — `forge-agent os-controls check` (also what `check` mode runs) compares live OS
+    state with the generated definitions and reports drift without changing anything, for CI and the
+    control node (0005).
+
+  These controls harden the proxy; they do not replace it. systemd's IP filtering silently does nothing
+  without eBPF cgroup support, which `check` reports as drift rather than assuming enforcement.
 - **Supervision** — restart with exponential backoff; quarantine after 5 crashes in 10 minutes, reported
   as a condition.
 
@@ -210,7 +254,7 @@ every 6 hours and changed-digest deltas every 5 minutes go to `forge-inventory` 
 
 | Module                                                                               | Version        | Linked | Binary   | Notes                                            |
 |--------------------------------------------------------------------------------------|----------------|--------|----------|--------------------------------------------------|
-| `hashicorp/go-plugin`                                                                | v1.8.0         | 14     | 10.8 MiB | gRPC, genproto, hclog, yamux, `fatih/color`      |
+| `hashicorp/go-plugin`                                                                | v1.8.0         | 14     | 12 MiB   | gRPC, genproto, hclog, yamux, `fatih/color`      |
 | `open-policy-agent/opa/v1/rego`                                                      | v1.20.2        | 26     | 22.0 MiB | jwx, logrus, gqlparser; see 0011                 |
 | `sigstore/sigstore-go` (not linked)                                                  | v1.3.0         | 71     | 17.5 MiB | measured below; runs in the core validator       |
 | `d5/tengo/v2`                                                                        | pseudo-version | 1      | 3.4 MiB  | see 0011                                         |
@@ -257,7 +301,7 @@ The core validator plugin was measured the same day with Go 1.27.1 (`linux/amd64
 
 | Binary                                                        | Versions       | Modules in the binary | `go list -m all` | Stripped |
 |---------------------------------------------------------------|----------------|-----------------------|------------------|----------|
-| `hashicorp/go-plugin` alone                                   | v1.8.0         | 14                    | 55               | 10 MiB   |
+| `hashicorp/go-plugin` alone                                   | v1.8.0         | 14                    | 43               | 12 MiB   |
 | Validator: go-plugin + sigstore-go `pkg/verify` and `pkg/tuf` | v1.8.0, v1.3.0 | 79                    | 372              | 17 MiB   |
 
 The validator links 65 modules beyond go-plugin. It shares `grpc`, `protobuf`, `golang/protobuf`,
@@ -287,7 +331,7 @@ Under `/var/lib/forge-agent` (`%ProgramData%\forge-agent` on Windows); every wri
 | `spool/outbox/`   | root:`forge-agent`, `0750` | reports and inventory, capped at 50 MiB, oldest dropped and counted          |
 | `state/`          | root, `0700`               | last accepted generation and bundle, handler state, plugin verifications     |
 | `state/trust/`    | root, `0700`               | accepted TUF metadata versions and the verified `trusted_root.json`          |
-| `plugins/sha256/` | root, `0555` files         | plugin executables whose SHA-256 matches a bundle pin; core update envelopes |
+| `plugins/<name>/` | root, `0555` files         | `forge-plugin-<name>`, its `.sha256` sidecar, and core update envelopes      |
 
 Packaged core plugins and their envelopes live in `/usr/lib/forge-agent/plugins/<name>/` (root, `0555`),
 owned by the OS package manager.
@@ -364,6 +408,7 @@ Prefix `FORGE_AGENT_`; the gateway client uses `FORGE_AGENT_GATEWAY_*` per 0003.
 | `plugins.sigstore.tufMirror`          | `FORGE_AGENT_PLUGINS_SIGSTORE_TUF_MIRROR`           | `https://tuf-repo-cdn.sigstore.dev`   |
 | `plugins.sigstore.tufRefreshInterval` | `FORGE_AGENT_PLUGINS_SIGSTORE_TUF_REFRESH_INTERVAL` | `24h`                                 |
 | `outbox.maxBytes`                     | `FORGE_AGENT_OUTBOX_MAX_BYTES`                      | `52428800`                            |
+| `osControls.mode`                     | `FORGE_AGENT_OS_CONTROLS_MODE`                      | `off` (`check`, `apply`)              |
 
 - **Air-gapped hosts** — proposed: `tufMirror` accepts an internal `https://` URL, or a `file://`
   directory populated out of band, for which `refresh` mode gets a read-only path grant and no network.
@@ -376,7 +421,7 @@ Prefix `FORGE_AGENT_`; the gateway client uses `FORGE_AGENT_GATEWAY_*` per 0003.
   the executor as LocalSystem and `serve` as a virtual service account (tier 2); macOS `arm64` with
   launchd (tier 2, file key store). Built with `CGO_ENABLED=0`.
 - **Packaging** — deb, rpm, and apk through [nfpm](https://nfpm.goreleaser.com) v2.47.0 run with
-  `go run`; an MSI for Windows and a pkg for macOS (tooling open). Packages include the units, users, and
+  `go run`; an NSIS installer for Windows and a pkg for macOS. Packages include the units, users, and
   cosign-signed checksums plus the starter's signed SBOM, and the core plugins with their envelopes,
   pinned by `forge-agent-plugins` version and per-platform SHA-256 (0014). The packaging job verifies
   each envelope against the embedded keys, and each cosign bundle, before building.
@@ -429,7 +474,8 @@ Prefix `FORGE_AGENT_`; the gateway client uses `FORGE_AGENT_GATEWAY_*` per 0003.
 - **CRL delivery** — does `pkg/revocation` accept an offline CRL source, and which route serves the CRL
   on the agent ingress (0003, 0006, 0008)?
 - **macOS keys** — Secure Enclave needs cgo; is a file key store acceptable there?
-- **Windows packaging** tool for the MSI, and the service account model.
+- **Windows service account model** — a virtual service account per service, and how the installer
+  creates it.
 - **Agent ID** — assigned by `forge-identity` at enrollment (assumed) or derived from the key?
 - **Core key rotation and revocation** — when does the next key become current, and how is a
   compromised core key revoked on hosts that trust it by embedding: only by an agent release, or also by
@@ -440,9 +486,9 @@ Prefix `FORGE_AGENT_`; the gateway client uses `FORGE_AGENT_GATEWAY_*` per 0003.
   need a different embedded root.
 - **Re-validation on trusted-root change** — re-verify installed plugins and block failures (proposed);
   should a failure also stop a running plugin?
-- **Network grant enforcement** — host names cannot be expressed in `IPAddressAllow=`; an egress proxy
-  or firewall sets? How does the executor's `IPAddressDeny=any` fit plugins with network grants, such as
-  `packages` (0014)?
+- **Wildcard grants** — the agent's proxy matches the grant's host names directly, so `{host: "*"}` for
+  package mirrors grants any destination. Narrow it to the mirrors an operator configures, or keep the
+  wildcard and rely on the audit log?
 
 ## References
 

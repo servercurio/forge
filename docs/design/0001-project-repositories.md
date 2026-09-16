@@ -303,7 +303,7 @@ Ansible project rather than a Go project, and it does not depend on `forge-agent
   - **Containers** — Podman hosts run [Quadlet](https://docs.podman.io/en/latest/markdown/podman-systemd.unit.5.html) units, and Docker hosts run
     [Compose](https://docs.docker.com/compose/) files.
   - **Directly on a compatible operating system** — signed deb and rpm packages with systemd units on
-    Enterprise Linux and Debian/Ubuntu LTS (amd64 and arm64), and MSI-installed Windows services on
+    Enterprise Linux and Debian/Ubuntu LTS (amd64 and arm64), and installer-based Windows services on
     Windows Server.
 - **OPA policies** — Rego policies evaluated against the Ansible inventories and variables, and against
   the rendered Helm, Compose, and Quadlet output, before a run
@@ -500,7 +500,7 @@ Answers to this document's earlier open questions (2026-09-14 to 2026-09-15). Th
   account mapping. Service certificates last 7 days and renew automatically.
 - **Deployment targets** — Kubernetes (Helm charts), containers (Podman Quadlet and Docker Compose), and
   direct installation on Enterprise Linux and Debian/Ubuntu LTS (signed deb and rpm packages with
-  systemd) or Windows Server (MSI-installed services), all deployed by the same Ansible and OPA
+  systemd) or Windows Server (installer-based services), all deployed by the same Ansible and OPA
   pipeline. See [Forge's own infrastructure](#forges-own-infrastructure).
 - **Plugin transport** — gRPC through `hashicorp/go-plugin`, which handles the handshake, process
   lifecycle, and optional mutual TLS.
