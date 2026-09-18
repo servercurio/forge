@@ -6,7 +6,7 @@
 
 ## What this repository is
 
-`forge` holds **project documentation, design assets, and the website** for the Server Curio
+`rackmarshal` holds **project documentation, design assets, and the website** for the Server Curio
 project family. It is content and presentation — not application code. Keep the repository
 minimal: prose, design assets (SVG/images), and the site scaffolding needed to publish them.
 Don't introduce application code, services, or a database.

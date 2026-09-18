@@ -3,10 +3,10 @@
 -->
 
 <p align="center">
-  <img src="docs/images/logo.svg" alt="Server Curio — Forge" width="600">
+  <img src="docs/images/logo.svg" alt="Server Curio — Rackmarshal" width="600">
 </p>
 
-# forge
+# rackmarshal
 
 Project documentation, design assets, and the website for the Server Curio project.
 

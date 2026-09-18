@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 <meta charset="utf-8">
-<title>Forge Console Prototype</title>
+<title>Rackmarshal Console Prototype</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
@@ -230,10 +230,10 @@
 <div class="shell">
   <aside class="rail">
     <div class="rail-brand">
-      <img class="on-light-only" src="../../images/forge-mark-minimal.svg" alt="">
-      <img class="on-dark-only" src="../../images/forge-mark-minimal-dark.svg" alt="">
+      <img class="on-light-only" src="../../images/rackmarshal-mark.svg" alt="">
+      <img class="on-dark-only" src="../../images/rackmarshal-mark-dark.svg" alt="">
       <span>
-        <span class="n">Forge</span>
+        <span class="n">Rackmarshal</span>
         <span class="sub">Console</span>
       </span>
     </div>
@@ -359,12 +359,12 @@
               <thead><tr><th>Identity</th><th>Requested by</th><th>Expires</th></tr></thead>
               <tbody>
                 <tr>
-                  <td class="mono">service/forge-gateway</td>
+                  <td class="mono">service/rackmarshal-gateway</td>
                   <td>Priya Ramanathan</td>
                   <td class="mono">in 42m</td>
                 </tr>
                 <tr>
-                  <td class="mono">service/forge-inventory</td>
+                  <td class="mono">service/rackmarshal-inventory</td>
                   <td>Marcus Bell</td>
                   <td class="mono">in 51m</td>
                 </tr>
@@ -379,10 +379,10 @@
             <table>
               <thead><tr><th>Service</th><th>Version</th><th>State</th></tr></thead>
               <tbody>
-                <tr><td class="mono">forge-identity</td><td class="mono">0.6.1</td><td><span class="pill s-ok"><span class="dot"></span>healthy</span></td></tr>
-                <tr><td class="mono">forge-gateway</td><td class="mono">0.6.1</td><td><span class="pill s-ok"><span class="dot"></span>healthy</span></td></tr>
-                <tr><td class="mono">forge-inventory</td><td class="mono">0.5.4</td><td><span class="pill s-ok"><span class="dot"></span>healthy</span></td></tr>
-                <tr><td class="mono">forge-provisioner</td><td class="mono">0.5.4</td><td><span class="pill s-warn"><span class="dot"></span>degraded</span></td></tr>
+                <tr><td class="mono">rackmarshal-identity</td><td class="mono">0.6.1</td><td><span class="pill s-ok"><span class="dot"></span>healthy</span></td></tr>
+                <tr><td class="mono">rackmarshal-gateway</td><td class="mono">0.6.1</td><td><span class="pill s-ok"><span class="dot"></span>healthy</span></td></tr>
+                <tr><td class="mono">rackmarshal-inventory</td><td class="mono">0.5.4</td><td><span class="pill s-ok"><span class="dot"></span>healthy</span></td></tr>
+                <tr><td class="mono">rackmarshal-provisioner</td><td class="mono">0.5.4</td><td><span class="pill s-warn"><span class="dot"></span>degraded</span></td></tr>
               </tbody>
             </table>
           </div>
@@ -402,7 +402,7 @@
       <div class="req">
         <div class="req-head">
           <div>
-            <span class="req-id">service/forge-gateway</span>
+            <span class="req-id">service/rackmarshal-gateway</span>
             <p class="muted" style="font-size:var(--text-xs);margin-top:2px">
               Requested by <strong>Priya Ramanathan</strong> at 09:18:44Z from control node
               <span class="mono">cn-prod-01</span>
@@ -413,7 +413,7 @@
         </div>
         <div class="req-body">
           <p style="font-size:var(--text-xs)">
-            This certificate lets its holder assert <span class="mono">X-Forge-Principal</span> for any user
+            This certificate lets its holder assert <span class="mono">X-Rackmarshal-Principal</span> for any user
             in any tenant. It is the most consequential identity in the environment, which is why it needs
             two people.
           </p>
@@ -431,14 +431,14 @@
             <strong>You cannot approve this request.</strong>
             <p style="margin-top:4px">
               You requested it. The approver is never the requester, and
-              <span class="mono">forge-identity</span> enforces that server-side &mdash; the console refuses
+              <span class="mono">rackmarshal-identity</span> enforces that server-side &mdash; the console refuses
               early only so the reason is legible. Ask another platform administrator to review it.
             </p>
           </div>
 
           <div style="display:flex;gap:var(--space-3);flex-wrap:wrap">
             <button class="btn btn-primary" type="button" disabled>Approve</button>
-            <button class="btn btn-critical" type="button" data-confirm="Reject the enrollment request for service/forge-gateway">Reject</button>
+            <button class="btn btn-critical" type="button" data-confirm="Reject the enrollment request for service/rackmarshal-gateway">Reject</button>
           </div>
         </div>
       </div>
@@ -446,7 +446,7 @@
       <div class="req">
         <div class="req-head">
           <div>
-            <span class="req-id">service/forge-inventory</span>
+            <span class="req-id">service/rackmarshal-inventory</span>
             <p class="muted" style="font-size:var(--text-xs);margin-top:2px">
               Requested by <strong>Marcus Bell</strong> at 09:27:10Z from control node
               <span class="mono">cn-prod-02</span>
@@ -467,8 +467,8 @@
           </div>
 
           <div style="display:flex;gap:var(--space-3);flex-wrap:wrap">
-            <button class="btn btn-primary" type="button" data-stepup="Approve enrollment for service/forge-inventory">Approve</button>
-            <button class="btn btn-critical" type="button" data-confirm="Reject the enrollment request for service/forge-inventory">Reject</button>
+            <button class="btn btn-primary" type="button" data-stepup="Approve enrollment for service/rackmarshal-inventory">Approve</button>
+            <button class="btn btn-critical" type="button" data-confirm="Reject the enrollment request for service/rackmarshal-inventory">Reject</button>
           </div>
         </div>
       </div>
@@ -489,7 +489,7 @@
           <div class="panel-body">
             <dl class="kv">
               <dt>Trust domain</dt><dd>k7m2q9x4bt6vn8rc3wzhy5jd1f</dd>
-              <dt>Root subject</dt><dd>CN=Forge Root CA, O=Northwind</dd>
+              <dt>Root subject</dt><dd>CN=Rackmarshal Root CA, O=Northwind</dd>
               <dt>Root expiry</dt><dd>2027-11-02T00:00:00Z</dd>
               <dt>Key backend</dt><dd>pkcs11</dd>
               <dt>Module</dt><dd>/usr/lib/softhsm/libsofthsm2.so</dd>
@@ -579,7 +579,7 @@
           </div>
 
           <dl class="kv" style="margin-top:var(--space-4)">
-            <dt>Anchor store</dt><dd>s3://nw-forge-audit-anchors (separate account)</dd>
+            <dt>Anchor store</dt><dd>s3://nw-rackmarshal-audit-anchors (separate account)</dd>
             <dt>Retention</dt><dd>object lock, compliance mode, 7 years</dd>
             <dt>Credentials</dt><dd>PutObject only &mdash; no delete, overwrite, or read</dd>
             <dt>Last verified head</dt><dd>9f2c4e7a1b8d05c3 &middot; seq 84 120</dd>
@@ -596,7 +596,7 @@
               <tr><td class="mono">84 127</td><td class="mono">09:27:10Z</td><td>Marcus Bell</td><td class="mono">service_enrollment.request</td><td><span class="pill s-ok"><span class="dot"></span>ok</span></td></tr>
               <tr><td class="mono">84 126</td><td class="mono">09:18:44Z</td><td>Priya Ramanathan</td><td class="mono">service_enrollment.request</td><td><span class="pill s-ok"><span class="dot"></span>ok</span></td></tr>
               <tr><td class="mono">84 125</td><td class="mono">08:52:01Z</td><td>Priya Ramanathan</td><td class="mono">enrollment_token.create</td><td><span class="pill s-ok"><span class="dot"></span>ok</span></td></tr>
-              <tr><td class="mono">84 124</td><td class="mono">08:44:19Z</td><td class="mono">svc/forge-gateway</td><td class="mono">certificate.renew</td><td><span class="pill s-ok"><span class="dot"></span>ok</span></td></tr>
+              <tr><td class="mono">84 124</td><td class="mono">08:44:19Z</td><td class="mono">svc/rackmarshal-gateway</td><td class="mono">certificate.renew</td><td><span class="pill s-ok"><span class="dot"></span>ok</span></td></tr>
               <tr><td class="mono">84 123</td><td class="mono">08:31:55Z</td><td>Marcus Bell</td><td class="mono">agent.revoke</td><td><span class="pill s-ok"><span class="dot"></span>ok</span></td></tr>
             </tbody>
           </table>
@@ -721,14 +721,14 @@
     });
 
     var stored = null;
-    try { stored = localStorage.getItem("forge-console-theme"); } catch (e) { stored = null; }
+    try { stored = localStorage.getItem("rackmarshal-console-theme"); } catch (e) { stored = null; }
     if (stored === "dark" || stored === "light") root.setAttribute("data-theme", stored);
     document.getElementById("theme-toggle").addEventListener("click", function () {
       var attr = root.getAttribute("data-theme");
       var dark = attr ? attr === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches;
       var next = dark ? "light" : "dark";
       root.setAttribute("data-theme", next);
-      try { localStorage.setItem("forge-console-theme", next); } catch (e) { /* private mode */ }
+      try { localStorage.setItem("rackmarshal-console-theme", next); } catch (e) { /* private mode */ }
     });
 
     show("overview");

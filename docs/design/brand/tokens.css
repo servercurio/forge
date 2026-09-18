@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
 /*
- * Forge design tokens.
+ * Rackmarshal design tokens.
  *
  * The brand ramp is lifted unchanged from docs/images/logo.svg: the mark is a
  * heat gradient — plum at the cool outer ring, crimson at the working heat,
@@ -70,7 +70,7 @@
   --unknown-fill: var(--sc-neutral-10);
 
   /* ---- Environment tiers ----
-   * Forge components are environment-aware (CONVENTIONS, "Environment"). The
+   * Rackmarshal components are environment-aware (CONVENTIONS, "Environment"). The
    * tier is shown on every authenticated surface, so it needs its own ramp. */
   --tier-production: var(--sc-ember);
   --tier-staging: #7E4E0F;

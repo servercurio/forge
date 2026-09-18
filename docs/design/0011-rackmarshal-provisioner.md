@@ -2,12 +2,12 @@
   ~ SPDX-License-Identifier: Apache-2.0
 -->
 
-# 0011 — forge-provisioner
+# 0011 — rackmarshal-provisioner
 
 - **Status:** Draft
 - **Owner:** Nathan Klick
 - **Date:** 2026-09-15
-- **Summary:** `forge-provisioner` is Forge's single desired-state authority. It stores versioned YAML
+- **Summary:** `rackmarshal-provisioner` is Rackmarshal's single desired-state authority. It stores versioned YAML
   documents, validates them with JSON Schema and embedded OPA, renders them with sandboxed Tengo, and
   reconciles every endpoint from a PostgreSQL work queue. Agents pull signed per-endpoint bundles, and
   agentless devices are enforced by in-process drivers.
@@ -18,12 +18,12 @@
 
 ## Context & goals
 
-0001 makes `forge-provisioner` the **single** desired-state authority with two enforcement paths
+0001 makes `rackmarshal-provisioner` the **single** desired-state authority with two enforcement paths
 ([Desired-state model](0001-project-repositories.md#desired-state-model--one-authority-two-enforcement-paths)).
 It fixes the format as custom YAML with `apiVersion` and `kind`, OPA embedded as a Go library and checked
 at write time and before dispatch, and Tengo with allowlisted pure modules, an allocation cap, and a
 timeout ([Desired-state format](0001-project-repositories.md#desired-state-format)). Agents reach it only
-through `forge-gateway`'s mutual-TLS agent ingress. Both paths converge against `forge-inventory`.
+through `rackmarshal-gateway`'s mutual-TLS agent ingress. Both paths converge against `rackmarshal-inventory`.
 
 **Goals**
 
@@ -35,18 +35,18 @@ through `forge-gateway`'s mutual-TLS agent ingress. Both paths converge against 
 
 **Non-goals**
 
-- On-host enforcement, plugins, and host inventory collection — [0012](0012-forge-agent.md).
-- The endpoint catalog and reported inventory — [0009](0009-forge-inventory.md).
-- Token formats, roles, and tenancy records — [0006](0006-forge-identity.md); routing and principal
-  propagation — [0008](0008-forge-gateway.md).
-- Deploying Forge itself — [0005](0005-forge-infrastructure.md).
+- On-host enforcement, plugins, and host inventory collection — [0012](0012-rackmarshal-agent.md).
+- The endpoint catalog and reported inventory — [0009](0009-rackmarshal-inventory.md).
+- Token formats, roles, and tenancy records — [0006](0006-rackmarshal-identity.md); routing and principal
+  propagation — [0008](0008-rackmarshal-gateway.md).
+- Deploying Rackmarshal itself — [0005](0005-rackmarshal-infrastructure.md).
 
 ## Proposal
 
 ### Responsibilities
 
 - **Document store** — CRUD, validation, revisions, and audit for desired-state documents.
-- **Targeting** — resolve label selectors against `forge-inventory` into per-endpoint desired state.
+- **Targeting** — resolve label selectors against `rackmarshal-inventory` into per-endpoint desired state.
 - **Rendering and policy** — Tengo `render` scripts, JSON Schema validation, OPA `admission` and
   `dispatch` policies.
 - **Dispatch** — signed directive bundles for agent endpoints; plan, apply, and verify for agentless ones.
@@ -56,8 +56,8 @@ through `forge-gateway`'s mutual-TLS agent ingress. Both paths converge against 
 
 #### Document model
 
-Proposed kinds in `forge.servercurio.com/v1alpha1`, each with a JSON Schema at
-`schemas/forge.servercurio.com/v1alpha1/<kind>.schema.json` in [0002](0002-forge-api-schema.md):
+Proposed kinds in `rackmarshal.servercurio.com/v1alpha1`, each with a JSON Schema at
+`schemas/rackmarshal.servercurio.com/v1alpha1/<kind>.schema.json` in [0002](0002-rackmarshal-api-schema.md):
 
 | Kind               | Purpose                                                                         |
 |--------------------|---------------------------------------------------------------------------------|
@@ -71,14 +71,14 @@ Every resource inside a `DirectiveSet` is itself an `apiVersion`/`kind` document
 covers both levels:
 
 ```yaml
-apiVersion: forge.servercurio.com/v1alpha1
+apiVersion: rackmarshal.servercurio.com/v1alpha1
 kind: DirectiveSet
 metadata: { name: web-baseline, labels: { team: web } }
 spec:
   mode: enforce
   target: { selector: { matchLabels: { role: web } } }
   resources:
-    - apiVersion: forge.servercurio.com/v1alpha1
+    - apiVersion: rackmarshal.servercurio.com/v1alpha1
       kind: File
       metadata: { name: nginx-conf }
       spec:
@@ -92,7 +92,7 @@ spec:
   1 MiB, and unknown top-level fields; convert to JSON; validate with `santhosh-tekuri/jsonschema/v6`.
 - **Conflicts** — two sets that target one endpoint with the same `kind` and `metadata.name` are a
   conflict reported at plan time, never resolved by last writer wins.
-- **Enforcement path** — each endpoint's path (`agent` or `agentless`) comes from `forge-inventory`.
+- **Enforcement path** — each endpoint's path (`agent` or `agentless`) comes from `rackmarshal-inventory`.
   Admission rejects host kinds targeted at agentless endpoints and device kinds at agent endpoints.
 - **Conversion** — the provisioner stores documents as written and converts between `apiVersion`s in
   Go when a newer version exists (0002 assigns conversion here).
@@ -107,9 +107,9 @@ spec:
 | `POST /provisioner/v1alpha1/plans`                               | `operator` | dry run: affected endpoints, diff  |
 | `GET /provisioner/v1alpha1/endpoints/{endpointId}/desired-state` | `operator` | rendered, secrets redacted         |
 | `GET /provisioner/v1alpha1/endpoints/{endpointId}/status`        | `operator` | generation, drift, conditions      |
-| `POST /provisioner/v1alpha1/reconciliations`                     | `operator` | enqueue; `x-forge-idempotent`      |
+| `POST /provisioner/v1alpha1/reconciliations`                     | `operator` | enqueue; `x-rackmarshal-idempotent`      |
 | `GET /provisioner/v1alpha1/directive-bundles/current`            | `agent`    | long poll, see below               |
-| `POST /provisioner/v1alpha1/enforcement-reports`                 | `agent`    | `x-forge-idempotent` by `reportId` |
+| `POST /provisioner/v1alpha1/enforcement-reports`                 | `agent`    | `x-rackmarshal-idempotent` by `reportId` |
 
 Writes return an `ETag` of the document generation and accept `If-Match`
 ([RFC 9110](https://www.rfc-editor.org/rfc/rfc9110#name-conditional-requests)). Validation and policy
@@ -123,18 +123,18 @@ agent cannot request another's bundle. The agent sends `If-None-Match: "<digest>
 `?waitSeconds=0..60`. The response is `304` or `200` with the bundle and an `ETag` of its digest.
 
 The bundle is a [DSSE](https://github.com/secure-systems-lab/dsse/blob/master/envelope.md) envelope
-(payload type `application/vnd.forge.directive-bundle.v1alpha1+json`) plus the signer's certificate
+(payload type `application/vnd.rackmarshal.directive-bundle.v1alpha1+json`) plus the signer's certificate
 chain. It is signed with the provisioner's own service key, whose certificate carries
-`spiffe://<environment-id>/service/forge-provisioner`. The payload holds `environmentId`, `tenantId`,
+`spiffe://<environment-id>/service/rackmarshal-provisioner`. The payload holds `environmentId`, `tenantId`,
 `endpointId`, `agentId`, a per-endpoint monotonic `generation`, `issuedAt`, `notAfter` (default 7
 days), `mode`, rendered resources, `host`-phase policies and scripts, and plugin pins (name, version,
 SHA-256, and publisher identity) taken only from verified plugin imports (below). 0001 relies on this
 signature for plugin pins.
 
-Two environment-wide fields ride along for core plugins ([0012](0012-forge-agent.md)): `coreKeyId`,
+Two environment-wide fields ride along for core plugins ([0012](0012-rackmarshal-agent.md)): `coreKeyId`,
 naming the embedded core public key agents treat as current, and `coreRevocations`, a list of core key
 IDs and plugin digests. `coreRevocations` is signed by the other embedded core key and copied into the
-payload verbatim, so a compromised provisioner can neither forge a revocation nor drop one an agent has
+payload verbatim, so a compromised provisioner can neither rackmarshal a revocation nor drop one an agent has
 already recorded. `coreKeyId` carries only the provisioner's signature, but an agent accepts it solely
 when it names a key the agent already embeds and never moves it backwards, so the worst a compromised
 provisioner achieves is retiring the current key early — a denial of service that fails closed, not a
@@ -149,10 +149,10 @@ Plugin signatures are verified here at import, and again on each host by the cor
 plugin before install ([0001](0001-project-repositories.md#agent-plugin-ecosystem)). A host installs a
 non-core plugin only when its digest matches a pin in a bundle this service signs and the validator
 accepts its signature for the pin's publisher identity
-([0012](0012-forge-agent.md#sigstore-verifier-measurements) records why the agent binary links no
+([0012](0012-rackmarshal-agent.md#sigstore-verifier-measurements) records why the agent binary links no
 verifier).
 
-- **Import** — creating or updating an `AgentPlugin` ([0014](0014-forge-agent-plugins.md)) downloads
+- **Import** — creating or updating an `AgentPlugin` ([0014](0014-rackmarshal-agent-plugins.md)) downloads
   `plugins-index.json`, the plugin manifest, and each listed asset's `.sigstore.json` bundle, and
   verifies them with [sigstore-go](https://github.com/sigstore/sigstore-go) `pkg/verify` against the
   referenced `PluginPublisher`: the keyless issuer and structured identity (repository, workflow, and
@@ -163,10 +163,10 @@ verifier).
   bundle; anything else fails admission with `plugin_not_verified`.
 - **Pins** — each bundle pin carries the plugin name, version, per-platform SHA-256, and the publisher
   identity verified at import: the keyless issuer, repository, workflow, and refs, or the public key.
-  The host validator checks the same identity before install ([0012](0012-forge-agent.md)).
+  The host validator checks the same identity before install ([0012](0012-rackmarshal-agent.md)).
 - **Core plugins** — `sigstore` and `sysfacts` ship in agent packages and are trusted through the
   core-plugin key embedded in the agent (0012); a pin for a newer core release also needs its core-signed
-  envelope on the host ([0014](0014-forge-agent-plugins.md)).
+  envelope on the host ([0014](0014-rackmarshal-agent-plugins.md)).
 - **Trusted root** — proposed: refresh `trusted_root.json` through Sigstore's TUF repository
   (sigstore-go `pkg/tuf`), with a packaged fallback for air-gapped environments.
 - **Withdrawal** — removing an `AgentPlugin` version or its `PluginPublisher` drops its pins from the
@@ -182,14 +182,14 @@ Level-triggered and idempotent, modeled on Kubernetes controllers
 2. **Lease** — workers claim rows with `SELECT … FOR UPDATE SKIP LOCKED`
    ([PostgreSQL](https://www.postgresql.org/docs/current/sql-select.html#SQL-FOR-UPDATE-SHARE)) and set
    `lease_expires_at`, so replicas share the queue and a crashed worker's lease lapses.
-3. **Resolve** matching `DirectiveSet`s and the endpoint's facts from `forge-inventory`.
+3. **Resolve** matching `DirectiveSet`s and the endpoint's facts from `rackmarshal-inventory`.
 4. **Render** `render`-phase scripts, validate every resource against its schema, and evaluate
    `dispatch` policies. Any error, timeout, or `deny` stops the endpoint with a condition.
 5. **Dispatch** — for an agent, store a new signed bundle only if the digest changed. For agentless
    devices, run the driver's `Observe` → `Plan` → `Apply` → `Observe`.
 6. **Record** status and requeue failures with exponential backoff (cap 30 minutes).
 
-Inventory changes arrive by polling a change cursor from [0009](0009-forge-inventory.md) (to be agreed);
+Inventory changes arrive by polling a change cursor from [0009](0009-rackmarshal-inventory.md) (to be agreed);
 until it exists, the resync interval covers them.
 
 #### Policy (OPA)
@@ -197,7 +197,7 @@ until it exists, the resync interval covers them.
 - **Library** — `github.com/open-policy-agent/opa/v1/rego` v1.20.2. Modules compile once per tenant
   revision with `PrepareForEval`; each evaluation gets a context deadline (default 500 ms), which
   `rego` turns into a topdown cancel.
-- **Contract** — packages `forge.admission`, `forge.dispatch`, and `forge.host`; each defines
+- **Contract** — packages `rackmarshal.admission`, `rackmarshal.dispatch`, and `rackmarshal.host`; each defines
   `deny contains {"code": …, "message": …}`. Input is `document`, `principal`, `tenant`, `environment`
   (`id`, `name`, `tier`), `endpoint` (`id`, `labels`, `facts`), and `now`. Errors, timeouts, and
   non-set results deny.
@@ -208,7 +208,7 @@ until it exists, the resync interval covers them.
   fails to compile. `rego.StrictBuiltinErrors(true)`; print statements only in `development`.
 
 ```rego
-package forge.admission
+package rackmarshal.admission
 
 deny contains {"code": "command_denied", "message": msg} if {
 	input.environment.tier == "production"
@@ -227,7 +227,7 @@ deny contains {"code": "command_denied", "message": msg} if {
   `EnableFileImport(false)`; no `os`, `fmt` (prints), `times`, or `rand` (non-deterministic).
   `SetMaxAllocs(100000)`, `SetMaxConstObjects(10000)`, source up to 64 KiB, output up to 1 MiB, and
   `RunContext` with a 2 s deadline by default. Compiled scripts are cached and `Clone`d per run.
-- **Host functions** — a `forge` module with `facts()` (immutable endpoint facts), `input()`, and
+- **Host functions** — a `rackmarshal` module with `facts()` (immutable endpoint facts), `input()`, and
   `fail(message)`. Results must be JSON-encodable and are schema-validated like any other resource.
 
 #### Agentless drivers
@@ -246,13 +246,13 @@ type Driver interface {
   SSH on `encoding/xml`). A new driver needs its own design note with its dependency cost.
 - **Safety** — one lease per device, a per-connection concurrency cap, and per-call timeouts.
   `DirectiveSet.spec.mode: audit` runs `Observe` and `Plan` only.
-- **Observed state** is written back to `forge-inventory` through its `internal` API (0009), so both
+- **Observed state** is written back to `rackmarshal-inventory` through its `internal` API (0009), so both
   enforcement paths converge against one catalog.
 
 ### Dependencies
 
-- **Forge** — `forge-api-schema` (models, schemas, embedded document), `forge-sdk` (`pkg/tlsconfig`,
-  `pkg/revocation`, `pkg/enroll` for the service certificate, and the inventory client), `forge-common`
+- **Rackmarshal** — `rackmarshal-api-schema` (models, schemas, embedded document), `rackmarshal-sdk` (`pkg/tlsconfig`,
+  `pkg/revocation`, `pkg/enroll` for the service certificate, and the inventory client), `rackmarshal-common`
   (`logging`, `environment`, `telemetry`).
 - **Starter** — Echo v5, pgx v5, bun, goose, as in `go-echo-starter`. Replace the starter's direct
   `gopkg.in/yaml.v3` with `go.yaml.in/yaml/v3` v3.0.5, which the starter already lists as indirect and
@@ -276,9 +276,9 @@ Alternatives.
 
 **sigstore-go is heavy — flagged, and confined here.** Its verifier compiles in 71 modules, including
 23 `go-openapi` modules, OpenTelemetry, and gRPC (through Rekor v2 types, without serving or calling any
-gRPC API); [0012](0012-forge-agent.md#sigstore-verifier-measurements) records the measurement and import
+gRPC API); [0012](0012-rackmarshal-agent.md#sigstore-verifier-measurements) records the measurement and import
 chains. It is accepted in this service and in the core `sigstore` validator plugin
-([0014](0014-forge-agent-plugins.md)), so the agent binary and other plugins never link it. The combined
+([0014](0014-rackmarshal-agent-plugins.md)), so the agent binary and other plugins never link it. The combined
 set with
 OPA, Tengo, and jsonschema is not measured yet; the module allowlist records it.
 
@@ -301,7 +301,7 @@ key.
 
 Credentials for devices are **never** stored here or in bundles: `credentialRef` names a secret that a
 `SecretProvider` resolves at apply time. The first provider reads files mounted by
-`forge-infrastructure`.
+`rackmarshal-infrastructure`.
 
 A `credentialRef` is resolved within the writing tenant only: the provider reads
 `<secrets.directory>/<tenantId>/<name>`, rejects any `name` containing a path separator or `..`, and
@@ -315,7 +315,7 @@ placed in a policy input, a script value, or a rendered resource.
 - **Multi-tenancy** — the tenant comes from the verified principal, as 0002 proposes. Every repository
   method requires a tenant ID, and PostgreSQL
   [row-level security](https://www.postgresql.org/docs/current/ddl-rowsecurity.html) with
-  `SET LOCAL forge.tenant_id` per transaction is defense in depth.
+  `SET LOCAL rackmarshal.tenant_id` per transaction is defense in depth.
 - **RBAC hooks** — the gateway authorizes each operation (0008). The provisioner additionally checks
   permissions such as `provisioner.policies.write` from the forwarded principal (format per 0006), and
   passes `principal` to `admission` policies for finer rules. Writing `Policy` and `Script` documents is
@@ -323,7 +323,7 @@ placed in a policy input, a script value, or a rendered resource.
 - **Untrusted input** — size limits, alias rejection, strict schemas, OPA capability filtering, and the
   Tengo sandbox above; fuzzing covers YAML decoding and DSSE parsing.
 - **Signing** — the bundle key is the renewing service key from `pkg/enroll`; it never leaves the
-  process. Agents verify the chain and SPIFFE ID ([0012](0012-forge-agent.md)).
+  process. Agents verify the chain and SPIFFE ID ([0012](0012-rackmarshal-agent.md)).
 - **Plugin releases** — Sigstore verification runs at import in this service, and again on hosts in the
   core validator against the identity in each pin (0012). `PluginPublisher` documents are audited like
   policies, and writing them is a separate permission from `AgentPlugin`.
@@ -345,36 +345,36 @@ between them.
 
 ### Logging & telemetry
 
-Through `forge-common`. Fields `forge.tenant.id`, `forge.endpoint.id`, `forge.document.id`,
-`forge.bundle.generation`, and `forge.policy.decision`; specs and rendered content are logged only as
-digests. Metrics: `forge.provisioner.reconcile.duration`, `forge.provisioner.queue.depth`,
-`forge.provisioner.policy.duration`, `forge.provisioner.script.duration`, and
-`forge.provisioner.endpoints.drifted`.
+Through `rackmarshal-common`. Fields `rackmarshal.tenant.id`, `rackmarshal.endpoint.id`, `rackmarshal.document.id`,
+`rackmarshal.bundle.generation`, and `rackmarshal.policy.decision`; specs and rendered content are logged only as
+digests. Metrics: `rackmarshal.provisioner.reconcile.duration`, `rackmarshal.provisioner.queue.depth`,
+`rackmarshal.provisioner.policy.duration`, `rackmarshal.provisioner.script.duration`, and
+`rackmarshal.provisioner.endpoints.drifted`.
 
 ### Configuration
 
-Prefix `FORGE_PROVISIONER_`, plus the starter's `server` and `database` blocks and the library blocks
+Prefix `RACKMARSHAL_PROVISIONER_`, plus the starter's `server` and `database` blocks and the library blocks
 from [CONVENTIONS.md](CONVENTIONS.md).
 
 | YAML                         | Variable                                         | Default                      |
 |------------------------------|--------------------------------------------------|------------------------------|
-| `reconcile.workers`          | `FORGE_PROVISIONER_RECONCILE_WORKERS`            | `8`                          |
-| `reconcile.resyncInterval`   | `FORGE_PROVISIONER_RECONCILE_RESYNC_INTERVAL`    | `15m`                        |
-| `reconcile.leaseDuration`    | `FORGE_PROVISIONER_RECONCILE_LEASE_DURATION`     | `60s`                        |
-| `policy.evalTimeout`         | `FORGE_PROVISIONER_POLICY_EVAL_TIMEOUT`          | `500ms`                      |
-| `script.maxAllocs`           | `FORGE_PROVISIONER_SCRIPT_MAX_ALLOCS`            | `100000`                     |
-| `script.timeout`             | `FORGE_PROVISIONER_SCRIPT_TIMEOUT`               | `2s`                         |
-| `bundle.validity`            | `FORGE_PROVISIONER_BUNDLE_VALIDITY`              | `168h`                       |
-| `bundle.maxWait`             | `FORGE_PROVISIONER_BUNDLE_MAX_WAIT`              | `60s`                        |
-| `inventory.url`              | `FORGE_PROVISIONER_INVENTORY_URL`                | required                     |
-| `secrets.directory`          | `FORGE_PROVISIONER_SECRETS_DIRECTORY`            | required if devices are used |
-| `plugins.trustedRootFile`    | `FORGE_PROVISIONER_PLUGINS_TRUSTED_ROOT_FILE`    | packaged fallback            |
-| `plugins.tufRefreshInterval` | `FORGE_PROVISIONER_PLUGINS_TUF_REFRESH_INTERVAL` | `24h`                        |
+| `reconcile.workers`          | `RACKMARSHAL_PROVISIONER_RECONCILE_WORKERS`            | `8`                          |
+| `reconcile.resyncInterval`   | `RACKMARSHAL_PROVISIONER_RECONCILE_RESYNC_INTERVAL`    | `15m`                        |
+| `reconcile.leaseDuration`    | `RACKMARSHAL_PROVISIONER_RECONCILE_LEASE_DURATION`     | `60s`                        |
+| `policy.evalTimeout`         | `RACKMARSHAL_PROVISIONER_POLICY_EVAL_TIMEOUT`          | `500ms`                      |
+| `script.maxAllocs`           | `RACKMARSHAL_PROVISIONER_SCRIPT_MAX_ALLOCS`            | `100000`                     |
+| `script.timeout`             | `RACKMARSHAL_PROVISIONER_SCRIPT_TIMEOUT`               | `2s`                         |
+| `bundle.validity`            | `RACKMARSHAL_PROVISIONER_BUNDLE_VALIDITY`              | `168h`                       |
+| `bundle.maxWait`             | `RACKMARSHAL_PROVISIONER_BUNDLE_MAX_WAIT`              | `60s`                        |
+| `inventory.url`              | `RACKMARSHAL_PROVISIONER_INVENTORY_URL`                | required                     |
+| `secrets.directory`          | `RACKMARSHAL_PROVISIONER_SECRETS_DIRECTORY`            | required if devices are used |
+| `plugins.trustedRootFile`    | `RACKMARSHAL_PROVISIONER_PLUGINS_TRUSTED_ROOT_FILE`    | packaged fallback            |
+| `plugins.tufRefreshInterval` | `RACKMARSHAL_PROVISIONER_PLUGINS_TUF_REFRESH_INTERVAL` | `24h`                        |
 
 ### Build, release & versioning
 
-Bootstrap from `go-echo-starter`, replacing its logging with `forge-common` and its route-metadata
-OpenAPI with the embedded contract from 0002. Binary `forge-provisioner`, shipped as the
+Bootstrap from `go-echo-starter`, replacing its logging with `rackmarshal-common` and its route-metadata
+OpenAPI with the embedded contract from 0002. Binary `rackmarshal-provisioner`, shipped as the
 [CONVENTIONS.md](CONVENTIONS.md#deployment-artifacts) deployment artifacts: the starter's Dockerfile and
 Helm chart (with the enrollment init container), signed deb and rpm packages, and a Windows installer.
 Database migrations are forward-only goose files; bundles are versioned by payload type so agents can
@@ -397,17 +397,17 @@ support the current and previous `apiVersion`.
 ## Alternatives considered
 
 - **OPA compiled to Wasm and run on [wazero](https://github.com/tetratelabs/wazero)** — v1.12.0 links
-  2 modules (`wazero`, `x/sys`) instead of 26, but Forge would own the OPA Wasm ABI and non-Wasm builtins
+  2 modules (`wazero`, `x/sys`) instead of 26, but Rackmarshal would own the OPA Wasm ABI and non-Wasm builtins
   ([OPA Wasm](https://www.openpolicyagent.org/docs/wasm)), and the official Go SDK
   [`golang-opa-wasm`](https://github.com/open-policy-agent/golang-opa-wasm) is archived. It also departs
   from 0001's "OPA as a Go library" decision.
 - **Push to agents** (provisioner connects out or holds streams) — needs a route to hosts and long-lived
   connections through the gateway; pull with long polling fits the agent ingress.
-- **Unsigned bundles relying on mutual TLS** — a compromised gateway could forge directives that OPA
+- **Unsigned bundles relying on mutual TLS** — a compromised gateway could rackmarshal directives that OPA
   might still allow.
 - **On-host verification only** — without an import check, an unverifiable release could be pinned and
   would fail on every host instead of at admission; see
-  [0012](0012-forge-agent.md#sigstore-verifier-measurements).
+  [0012](0012-rackmarshal-agent.md#sigstore-verifier-measurements).
 - **Out-of-process drivers over go-plugin** — isolates faults, but brings gRPC into a service against
   the [API style convention](CONVENTIONS.md#api-contract-and-style).
 - **A job queue library such as River** — more features, but a dependency for what `SKIP LOCKED` does.
@@ -420,7 +420,7 @@ support the current and previous `apiVersion`.
 - **Principal propagation** — the header or token the gateway forwards, and the permission names (0006,
   0008).
 - **Secret providers** beyond mounted files — Vault, cloud secret managers?
-- **Plugin-defined kinds** — who publishes their schemas: `forge-api-schema` or the plugin (0013)?
+- **Plugin-defined kinds** — who publishes their schemas: `rackmarshal-api-schema` or the plugin (0013)?
 - **Bundle validity** — is 7 days right for offline agents, and should it be per tenant?
 - **Tengo maintenance** — pin upstream pseudo-versions, or fork under `servercurio`?
 - **Approvals** — do `production` changes need a second approver before dispatch?
@@ -430,7 +430,7 @@ support the current and previous `apiVersion`.
 ## References
 
 - [0001 — Project Repositories](0001-project-repositories.md), [CONVENTIONS.md](CONVENTIONS.md),
-  [0002](0002-forge-api-schema.md), [0003](0003-forge-sdk.md), [0004](0004-forge-common.md).
+  [0002](0002-rackmarshal-api-schema.md), [0003](0003-rackmarshal-sdk.md), [0004](0004-rackmarshal-common.md).
 - [OPA Go integration](https://www.openpolicyagent.org/docs/integration) and
   [`v1/rego`](https://pkg.go.dev/github.com/open-policy-agent/opa/v1/rego) — `PrepareForEval`,
   `Capabilities`, `StrictBuiltinErrors`, `EnablePrintStatements`; source read at v1.20.2.

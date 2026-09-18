@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
 <meta charset="utf-8">
-<title>Forge Portal Prototype</title>
+<title>Rackmarshal Portal Prototype</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
@@ -279,12 +279,12 @@
   @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 </style>
 
-<!-- ============================ LOGIN (forge-sso) ============================ -->
+<!-- ============================ LOGIN (rackmarshal-sso) ============================ -->
 <div class="standalone" id="screen-login" hidden>
   <div class="auth-card">
     <div class="lock">
-      <img class="on-light-only" src="../../images/forge-lockup.svg" alt="Forge">
-      <img class="on-dark-only" src="../../images/forge-lockup-dark.svg" alt="Forge">
+      <img class="on-light-only" src="../../images/rackmarshal-lockup.svg" alt="Rackmarshal">
+      <img class="on-dark-only" src="../../images/rackmarshal-lockup-dark.svg" alt="Rackmarshal">
     </div>
 
     <div class="panel">
@@ -327,11 +327,11 @@
       </div>
     </div>
 
-    <p class="surface-note">Served by forge-sso &middot; 0007</p>
+    <p class="surface-note">Served by rackmarshal-sso &middot; 0007</p>
   </div>
 </div>
 
-<!-- ======================= CLI CALLBACK (forge-cli) ======================= -->
+<!-- ======================= CLI CALLBACK (rackmarshal-cli) ======================= -->
 <div class="standalone" id="screen-callback" hidden>
   <div class="auth-card">
     <div class="panel">
@@ -353,7 +353,7 @@
         </dl>
       </div>
     </div>
-    <p class="surface-note">Served by forge-cli on 127.0.0.1 &middot; 0010, 0016</p>
+    <p class="surface-note">Served by rackmarshal-cli on 127.0.0.1 &middot; 0010, 0016</p>
   </div>
 </div>
 
@@ -361,9 +361,9 @@
 <div class="shell" id="app" hidden>
   <aside class="rail">
     <div class="rail-brand">
-      <img class="on-light-only" src="../../images/forge-mark-minimal.svg" alt="">
-      <img class="on-dark-only" src="../../images/forge-mark-minimal-dark.svg" alt="">
-      <span class="n">Forge</span>
+      <img class="on-light-only" src="../../images/rackmarshal-mark.svg" alt="">
+      <img class="on-dark-only" src="../../images/rackmarshal-mark-dark.svg" alt="">
+      <span class="n">Rackmarshal</span>
     </div>
     <nav aria-label="Primary">
       <span class="nav-label">Estate</span>
@@ -606,7 +606,7 @@
 
       <div class="warnbox">
         Host state diverged from generation <strong>1188</strong> at 09:12:30Z.
-        <span class="mono">/etc/postgresql/16/main/postgresql.conf</span> was modified outside Forge.
+        <span class="mono">/etc/postgresql/16/main/postgresql.conf</span> was modified outside Rackmarshal.
       </div>
 
       <div class="two-col">
@@ -863,14 +863,14 @@
 
     // theme
     var stored = null;
-    try { stored = localStorage.getItem("forge-proto-theme"); } catch (e) { stored = null; }
+    try { stored = localStorage.getItem("rackmarshal-proto-theme"); } catch (e) { stored = null; }
     if (stored === "dark" || stored === "light") root.setAttribute("data-theme", stored);
     document.getElementById("theme-toggle").addEventListener("click", function () {
       var attr = root.getAttribute("data-theme");
       var dark = attr ? attr === "dark" : window.matchMedia("(prefers-color-scheme: dark)").matches;
       var next = dark ? "light" : "dark";
       root.setAttribute("data-theme", next);
-      try { localStorage.setItem("forge-proto-theme", next); } catch (e) { /* private mode */ }
+      try { localStorage.setItem("rackmarshal-proto-theme", next); } catch (e) { /* private mode */ }
     });
 
     show("overview");

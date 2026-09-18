@@ -10,7 +10,7 @@
 
 This repository uses GitHub's [private vulnerability reporting](https://docs.github.com/en/code-security/security-advisories/guidance-on-reporting-and-writing-information-about-vulnerabilities/privately-reporting-a-security-vulnerability) to receive reports privately. To submit a report:
 
-1. Open <https://github.com/servercurio/forge/security/advisories/new>.
+1. Open <https://github.com/servercurio/rackmarshal/security/advisories/new>.
 2. Provide a clear description of the issue, the affected page or asset, and a minimal reproduction (commit hash, URL, sample content, etc.).
 3. Suggest an impact assessment if you are able (CVSS vector or plain-language severity).
 
