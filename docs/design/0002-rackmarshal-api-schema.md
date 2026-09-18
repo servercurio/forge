@@ -6,335 +6,277 @@
 
 - **Status:** Draft
 - **Owner:** Nathan Klick
-- **Date:** 2026-09-15
-- **Summary:** `rackmarshal-api-schema` is the single source of truth for Rackmarshal's HTTP API contracts, written
-  first in OpenAPI 3.1, and for desired-state schemas in JSON Schema 2020-12. It publishes the documents,
-  generated Go models with no third-party dependencies, and the lint and breaking-change checks that
-  every other repository relies on.
+- **Date:** 2026-09-18
+- **Summary:** `rackmarshal-api-schema` holds the Go types every other repository shares: the service API
+  models, the OPA policy inputs, outputs and state, and the desired-state manifests. Those types are the
+  contract. The OpenAPI 3.0 documents and the reference documentation are generated from them and never
+  written by hand, and `rackmarshal-sdk` generates its client from the types directly rather than from a
+  document. The manifest kinds themselves are specified in [0020](0020-desired-state-kinds.md).
 
-> An initial draft with concrete proposals. Formats, tools, layout, and policies are proposals to argue
-> with, bounded by the [Resolved decisions](0001-project-repositories.md#resolved-decisions) in 0001.
-> Conventions other repositories depend on are summarized in [CONVENTIONS.md](CONVENTIONS.md).
+> An initial draft with concrete proposals, bounded by the
+> [Resolved decisions](0001-project-repositories.md#resolved-decisions) in 0001. Conventions other
+> repositories depend on are summarized in [CONVENTIONS.md](CONVENTIONS.md).
 
 ## Context & goals
 
 [0001](0001-project-repositories.md#repository-inventory) makes `rackmarshal-api-schema` the home of "the
-inter-service and client schema" and requires that the wire contract live there once, with clients using
-the generated `rackmarshal-sdk` rather than re-deriving types
-([Naming & conventions](0001-project-repositories.md#naming--conventions)). It also publishes the JSON
-Schemas for desired-state documents with Kubernetes-style `apiVersion` and `kind`
-([Desired-state format](0001-project-repositories.md#desired-state-format)). It is first in the
+inter-service and client schema" and requires the wire contract to live there once, with clients using
+`rackmarshal-sdk` rather than re-deriving types
+([Naming & conventions](0001-project-repositories.md#naming--conventions)). It is first in the
 [build order](0001-project-repositories.md#sequencing--phases), so its choices constrain every other
 repository.
 
+This document originally specified that as contract-first: hand-written OpenAPI 3.1 documents, hand-written
+JSON Schema files for desired-state kinds, and Go models generated from the documents. That is reversed
+here. The repository holds Go types, and everything else is generated from them.
+
+The reason is the failure the old arrangement had already produced. A kind was described in three places —
+a hand-written schema, a hand-written Go type, and prose — with nothing forcing agreement, and the portal's
+directive wizard ended up generating YAML inferred from a single example ([0017](0017-rackmarshal-portal.md)).
+One artefact has to win, and the one that compiles is the only one that cannot quietly disagree with itself.
+
 **Goals**
 
-- One contract format and API style for every Rackmarshal HTTP API, internal and external.
-- Versioning, deprecation, and error rules that work across independently released repositories.
-- Go models with no third-party dependencies, plus embedded documents that services serve and test against.
-- Catch drift and breaking changes in CI before they reach `rackmarshal-sdk` or a service.
+- One module holding every shared Go type: service API models, OPA structures, desired-state manifests.
+- Types that compile are the contract, so no second hand-written artefact can contradict them.
+- Documents and reference material generated from the types and drift-checked in CI.
+- One dependency for every consumer: the SDK, the services, the gateway, the provisioner, and the agent.
 
 **Non-goals**
 
+- Hand-written OpenAPI documents or JSON Schema files. Both are generated; neither is edited.
 - The agent plugin contract — gRPC over `hashicorp/go-plugin`, owned by
   [0013](0013-rackmarshal-agent-plugin-sdk.md).
 - Client behavior such as retries, authentication, and TLS — [0003](0003-rackmarshal-sdk.md).
 - Token formats, RBAC, and the enrollment token encoding — [0006](0006-rackmarshal-identity.md).
 - Gateway routing, rate limits, and principal propagation — [0008](0008-rackmarshal-gateway.md).
-- The resources each service exposes — each service's own document.
-- SAML and OIDC protocol endpoints in `rackmarshal-sso` and `rackmarshal-identity`; they follow their standards.
+- Rego policy source. This repository types the inputs and outputs; the policies live in
+  [0011](0011-rackmarshal-provisioner.md) and are authored per tenant.
+- Runtime, tenant-supplied JSON Schemas for inventory classes, which are a different mechanism entirely —
+  [0009](0009-rackmarshal-inventory.md).
 
 ## Proposal
 
 ### Responsibilities
 
-- One OpenAPI 3.1 document per service per API version, plus a shared components document.
-- One JSON Schema 2020-12 file per desired-state `kind` per `apiVersion`.
-- Generated Go models for API documents; Go types for desired-state kinds.
-- Embedded access to every document through `embed.FS`, so services serve the exact contract.
-- The Rackmarshal vacuum ruleset, the oasdiff compatibility policy, examples, and drift checks.
+- Go types for every service API request and response, plus the shared components every service reuses.
+- Go types for OPA: the policy input per phase, the decision and violation shapes, and policy state.
+- Go types for the desired-state manifest kinds specified in [0020](0020-desired-state-kinds.md).
+- Generation of the OpenAPI 3.0 component schemas and the reference documentation from those types.
+- The vacuum ruleset, the oasdiff compatibility policy, examples, and the drift checks every repository runs.
 
-### Interfaces
+### Types first, documents generated
 
-#### Contract format and API style
+Proposed: **the Go types are the contract, and documents are build outputs.** Rationale:
 
-Proposed: **contract-first OpenAPI 3.1, REST with JSON for every API.** Internal calls use the same
-contract over mutual TLS; there is no service-to-service gRPC. Rationale:
+- **One artefact wins, and it is the one that compiles.** A hand-written schema and a hand-written type
+  can disagree; a generated schema cannot disagree with the type it came from.
+- **The starters already work this way.** `go-echo-starter` generates OpenAPI from route metadata and
+  drift-checks it in CI (`800-call-openapi-drift.yaml`). Under contract-first that was an obstacle to work
+  around; here it is the mechanism.
+- **One description of a manifest, not two.** Dropping the standalone JSON Schema files removes the second
+  description of every desired-state kind. The Go type is the only one left.
+- **Parallelism survives.** The types live here rather than in any service, so `rackmarshal-sdk`, the
+  gateway, and the first services still start together — from a Go package instead of a YAML document.
 
-- **Matches the starters.** `go-echo-starter` already serves `/openapi.yaml` and `/openapi.json` and
-  checks spec drift in CI (`800-call-openapi-drift.yaml`), and third-party clients need nothing beyond
-  HTTP and JSON.
-- **One schema dialect.** OpenAPI 3.1's Schema Object is JSON Schema 2020-12, so API schemas and
-  desired-state schemas share a dialect and API bodies can `$ref` desired-state schemas.
-- **Tools support 3.1.** oapi-codegen v2.8.0 supports OpenAPI 3.0 and 3.1, including `type: [T, "null"]`;
-  kin-openapi lists 3.1; oasdiff lists 3.1 and 3.2; vacuum is built on libopenapi, which lists 3.0 to 3.2.
-- **Keeps gRPC out of services.** 0001's
-  [telemetry decision](0001-project-repositories.md#logging-and-telemetry-rackmarshal-common) went out of its
-  way to avoid gRPC; it stays confined to `rackmarshal-agent` and plugins.
-- **Contract before code.** `go-echo-starter` generates OpenAPI 3.0 from route metadata after the code
-  exists. `rackmarshal-sdk`, the gateway, and the first services are built in parallel, so the contract must
-  come first.
+**OpenAPI 3.0, not 3.1.** The generated documents are OpenAPI 3.0, which is what the starter's generator
+emits. 3.1 was originally chosen so its Schema Object would be JSON Schema 2020-12 and API bodies could
+`$ref` the desired-state schema files. With those files gone there is nothing to `$ref` and nothing to
+reconcile: a manifest and an API body that carries one are described by the same Go type, so they cannot
+diverge whatever dialect the generated document uses.
 
-#### Repository layout
+### Repository layout
 
 ```
 rackmarshal-api-schema/
-├── openapi/
-│   ├── common/v1/components.yaml        # Problem, list envelope, parameters, security schemes
-│   ├── identity/v1alpha1/openapi.yaml
-│   ├── inventory/v1alpha1/openapi.yaml
-│   └── provisioner/v1alpha1/openapi.yaml
-├── schemas/rackmarshal.servercurio.com/v1alpha1/<kind>.schema.json
-├── examples/                            # valid and invalid samples for every operation and kind
 ├── pkg/
-│   ├── openapi/                         # embed.FS; Document(service, version string) ([]byte, error)
-│   ├── schemas/                         # embed.FS; Schema(apiVersion, kind string) ([]byte, error)
-│   ├── common/v1/                       # package commonv1 (generated)
-│   ├── inventory/v1alpha1/              # package inventoryv1alpha1 (generated)
-│   └── desiredstate/v1alpha1/           # package desiredstatev1alpha1 (hand-written kinds)
-├── codegen/                             # one oapi-codegen config per document
-├── rules/rackmarshal.vacuum.yaml              # Spectral-compatible ruleset
-├── conformance/                         # nested Go module: validation and round-trip tests
+│   ├── api/
+│   │   ├── common/v1/                  # Problem, list envelope, pagination, shared parameters
+│   │   ├── identity/v1alpha1/
+│   │   ├── inventory/v1alpha1/
+│   │   └── provisioner/v1alpha1/
+│   ├── opa/v1alpha1/                   # policy input, decision, violation, policy state
+│   └── desiredstate/v1alpha1/          # manifest kinds (0020)
+├── gen/                                # generated, committed, drift-checked
+│   ├── openapi/common/v1/components.yaml
+│   └── reference/                      # generated reference documentation
+├── examples/                           # valid and invalid samples per operation and kind
+├── rules/rackmarshal.vacuum.yaml       # Spectral-compatible ruleset
+├── conformance/                        # nested Go module: validation and round-trip tests
 └── Taskfile.yaml
 ```
 
-Every API starts at `v1alpha1`. `rackmarshal-gateway` and `rackmarshal-sso` add documents only for JSON APIs they own.
+Nothing under `gen/` is edited. `task generate` rewrites it and `task check:drift` fails the build if the
+committed output differs from what the types produce.
 
-#### Paths, operations, and extensions
+Each service generates its own document, because paths and operations live with the routes that declare
+them. This repository generates the shared components those documents reference, so a service document is
+its paths plus a reference to components it does not restate.
+
+### OPA types
+
+The policies are Rego and live with the provisioner; what crosses the boundary is typed here, so the
+provisioner, the agent, and a policy author all agree on the shape.
+
+| Type           | Carries                                                                        |
+|----------------|--------------------------------------------------------------------------------|
+| `Phase`        | `admission`, `dispatch`, or `host`                                              |
+| `Input`        | Environment, tenant, principal, the document under evaluation, endpoint facts   |
+| `Decision`     | The outcome plus the violations that produced it                                |
+| `Violation`    | `code` (stable lower_snake_case), `message`, and a JSON pointer where relevant  |
+| `PolicyRef`    | Name, phase, and the revision evaluated, for the audit record                   |
+| `EvalMetadata` | Duration, the rules that fired, and whether the evaluation hit its deadline     |
+
+The phases are 0011's: `admission` when a document is written, `dispatch` when a bundle is built, and
+`host` on the agent against the rendered bundle. A `host` policy may only add denials
+([0012](0012-rackmarshal-agent.md)), so its `Decision` is merged as a union of violations rather than
+replacing an earlier one.
+
+`Violation.code` is the same stable identifier the problem responses use, so a policy denial surfaces to a
+caller as `policy_denied` with the rule that denied it rather than as a generic failure.
+
+### Paths, operations, and extensions
 
 Paths follow `/<service>/<version>/<plural-resource>[/{id}]` in kebab-case, and `operationId` is a
 lowerCamelCase verb-noun unique within its document. Three Rackmarshal extensions carry metadata other
-repositories act on:
+repositories act on, and because documents are generated they originate as annotations on the route
+declarations rather than as YAML:
 
-| Extension            | Applies to      | Values                                   | Used by                            |
-|----------------------|-----------------|------------------------------------------|------------------------------------|
-| `x-rackmarshal-audience`   | operation       | array of `operator`, `agent`, `internal` | gateway routing, SDK docs, lint    |
-| `x-rackmarshal-sensitive`  | schema property | `true`                                   | SDK redaction, logging rules       |
-| `x-rackmarshal-idempotent` | POST operation  | `true`                                   | SDK retry policy                   |
+| Extension                  | Applies to      | Values                                   | Used by                         |
+|----------------------------|-----------------|------------------------------------------|---------------------------------|
+| `x-rackmarshal-audience`   | operation       | array of `operator`, `agent`, `internal` | gateway routing, SDK docs, lint |
+| `x-rackmarshal-sensitive`  | schema property | `true`                                   | SDK redaction, logging rules    |
+| `x-rackmarshal-idempotent` | POST operation  | `true`                                   | SDK retry policy                |
 
-`common/v1` defines two security schemes: `bearerAuth` (`type: http`, `scheme: bearer`) and `mutualTLS`
-(a scheme type OpenAPI 3.1 defines). `operator` operations require `bearerAuth`, while `agent` and
-`internal` operations require `mutualTLS`. The only exceptions are the agent enrollment operation, which
-0001 makes the single route without a client certificate
-([Agent enrollment](0001-project-repositories.md#agent-enrollment)), and service enrollment. Both declare
+`x-rackmarshal-sensitive` is a struct tag on the field it marks, so the property and its marking cannot
+drift apart. The other two are route annotations.
+
+`common/v1` defines two security schemes: `bearerAuth` (`type: http`, `scheme: bearer`) and `mutualTLS`.
+`operator` operations require `bearerAuth`; `agent` and `internal` operations require `mutualTLS`. The
+exceptions are agent enrollment, which 0001 makes the single route without a client certificate
+([Agent enrollment](0001-project-repositories.md#agent-enrollment)), and service enrollment; both declare
 `security: []`. The gateway-to-service hop is always mutual TLS and is not modeled per operation.
 
-```yaml
-paths:
-  /inventory/v1alpha1/endpoints:
-    get:
-      operationId: listEndpoints
-      x-rackmarshal-audience: [operator]
-      security: [{ bearerAuth: [] }]
-      parameters:
-        - $ref: "../../common/v1/components.yaml#/components/parameters/Limit"
-        - $ref: "../../common/v1/components.yaml#/components/parameters/Cursor"
-      responses:
-        "200":
-          description: One page of endpoints.
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/EndpointList" }
-        default:
-          $ref: "../../common/v1/components.yaml#/components/responses/Problem"
-```
+### Errors
 
-Lists use `limit` and an opaque `cursor`, returning `items` and `nextCursor`. Properties are
-lowerCamelCase, timestamps are RFC 3339 in UTC, and IDs are opaque strings.
+Every non-2xx response is `application/problem+json`
+([RFC 9457](https://www.rfc-editor.org/rfc/rfc9457)) with Rackmarshal members `code`, `traceId`, and, for
+validation failures, `errors[]` of `pointer` and `detail`. `Problem` is a Go type in `pkg/api/common/v1`,
+so every service returns the same shape by construction. Problem bodies never carry secrets, stack traces,
+or another tenant's data.
 
-#### Error model
+### Versioning and deprecation
 
-Every non-2xx response uses `application/problem+json` from
-[RFC 9457](https://www.rfc-editor.org/rfc/rfc9457), defined once in `common/v1`, with three Rackmarshal
-extension members:
+One Go package per API version (`inventory/v1alpha1`), with versions side by side so a breaking change ships
+as a new package rather than an edit to an existing one. Stages are `v1alpha1` → `v1beta1` → `v1`, matching
+the desired-state stages 0001 sets. `oasdiff` compares each generated document with the last release and
+fails on a breaking change to a beta or stable version. Deprecation uses `deprecated: true` in the generated
+document plus `Deprecation` ([RFC 9745](https://www.rfc-editor.org/rfc/rfc9745)) and `Sunset`
+([RFC 8594](https://www.rfc-editor.org/rfc/rfc8594)) response headers.
 
-```json
-{
-  "type": "<problem-base-url>/validation_failed",
-  "title": "Request body failed validation",
-  "status": 400,
-  "code": "validation_failed",
-  "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
-  "errors": [{ "pointer": "#/labels/site", "detail": "must be a lowercase DNS label" }]
-}
-```
-
-`code` is a stable lower_snake_case identifier clients branch on, and `title` and `detail` are for
-people. `errors` follows the shape of RFC 9457's own example. `traceId` connects a report to the trace.
-
-#### Versioning and compatibility
-
-- **API versions** follow Kubernetes-style stages, as desired-state documents already do (0001):
-  `v1alpha1` may break between releases; beta breaks only by adding a new beta version beside the old
-  one; a stable `v1` never breaks, so breaking changes ship as `v2` served side by side. This mirrors the
-  [Kubernetes deprecation policy](https://kubernetes.io/docs/reference/using-api/deprecation-policy/).
-- **Enforcement** — oasdiff compares every pull request with the documents at the last release tag and
-  fails on a breaking change to a beta or stable document.
-- **Deprecation** — `deprecated: true` in the document. The serving service sends `Deprecation`
-  ([RFC 9745](https://www.rfc-editor.org/rfc/rfc9745)) and `Sunset`
-  ([RFC 8594](https://www.rfc-editor.org/rfc/rfc8594)) headers.
-- **Module version** — the Go module uses semantic versioning independently of API versions. Each
-  document's `info.version` is set to the module release version by `task generate`, which the
-  starters' semantic-release `prepareCmd` already runs.
-- **Desired-state schemas** follow the same stages under the `rackmarshal.servercurio.com` group from 0001.
-  Converting between versions belongs to `rackmarshal-provisioner` ([0011](0011-rackmarshal-provisioner.md)).
-
-#### Go packages
-
-- **API models** are generated by oapi-codegen with `generate: { models: true }`, one package per
-  document, and `import-mapping` for references to `common/v1`. In a test on 2026-09-15 with v2.8.0,
-  models using `string`, `integer`, `date-time`, arrays, and maps imported nothing outside the standard
-  library. `format: uuid`, `date`, and `email` generated `github.com/oapi-codegen/runtime/types`
-  imports, so the ruleset bans those formats and schemas use `pattern` instead.
-- **Desired-state types** are hand-written Go structs with `json` and `yaml` tags. Conformance tests keep
-  them honest against the schemas (see Testing).
-- **Embedded documents** — `pkg/openapi` and `pkg/schemas` use [`embed`](https://pkg.go.dev/embed).
-  Services serve `/openapi.yaml` from them instead of `go-echo-starter`'s route-metadata generator.
-- **The root module's `go.mod` has no requirements.** Validators live in the nested `conformance` module,
-  and code generators run through `go run <module>@<version>`, so neither reaches consumers.
+Adding an optional field with a default is not breaking. Changing a default, narrowing an enum, or making an
+optional field required is.
 
 ### Dependencies
 
-- **Rackmarshal repositories** — none upstream. Consumers: `rackmarshal-sdk` (models and documents), every service
-  (models and embedded documents), `rackmarshal-gateway` (audience metadata), and `rackmarshal-provisioner` and
-  `rackmarshal-agent` (desired-state schemas and types).
-- **Root module** — the Go standard library only.
+- **Rackmarshal repositories** — none upstream. Consumers: `rackmarshal-sdk` (types and generated client),
+  every service (types and generated documents), `rackmarshal-gateway` (audience metadata),
+  `rackmarshal-provisioner` and `rackmarshal-agent` (OPA and desired-state types).
+- **Root module** — the Go standard library only. This is the constraint that matters most, because every
+  other repository imports it.
 - **`conformance` module** — [kin-openapi](https://github.com/getkin/kin-openapi) v0.149.0 to validate
-  examples against operations, and
-  [santhosh-tekuri/jsonschema/v6](https://github.com/santhosh-tekuri/jsonschema) v6.0.3 for desired-state
-  schemas. jsonschema's `go.mod` requires only `golang.org/x/text`, plus `dlclark/regexp2` for its own
-  tests; kin-openapi additionally requires `go-openapi/jsonpointer`, `gorilla/mux`, `oasdiff/yaml`,
-  `oasdiff/yaml3`, and `jsonschema/v6`, which is why both stay in the nested module.
-- **Tools** (not in `go.mod`) — [oapi-codegen](https://github.com/oapi-codegen/oapi-codegen) v2.8.0,
-  [oasdiff](https://github.com/oasdiff/oasdiff) v1.32.0, [vacuum](https://github.com/daveshanley/vacuum)
-  v0.30.6.
+  examples against the generated documents. It requires `go-openapi/jsonpointer`, `gorilla/mux`,
+  `oasdiff/yaml`, `oasdiff/yaml3`, and `jsonschema/v6`, which is why it stays in a nested module.
+- **Tools** (not in `go.mod`) — the OpenAPI generator, [oasdiff](https://github.com/oasdiff/oasdiff) v1.32.0,
+  and [vacuum](https://github.com/daveshanley/vacuum) v0.30.6, all run through `go run <module>@<version>`.
+
+`oapi-codegen` was the generator under contract-first, turning documents into Go models. With the direction
+reversed it has no job here. Whether `rackmarshal-sdk` still needs it is 0003's question, not this one.
 
 ### Data & storage
 
-None. Documents live in Git; the module holds no runtime state.
+None. Types live in Git; the module holds no runtime state.
 
 ### Security
 
-- **Security lives in the contract.** Lint fails on any operation without an explicit `security`. An
-  empty `security: []` is allowed only on an allowlisted set: enrollment and health.
+- **Security is declared where the route is.** Lint fails on any operation whose generated document lacks an
+  explicit `security`. An empty `security: []` is allowed only on an allowlisted set: enrollment and health.
 - **Audiences bound exposure.** The gateway builds its route tables from `x-rackmarshal-audience`, so an
   operation is never reachable on an ingress it was not declared for ([0008](0008-rackmarshal-gateway.md)).
-- **Secrets are marked.** Tokens, enrollment tokens, and projected service account tokens carry
-  `x-rackmarshal-sensitive: true`. The SDK redacts them and `rackmarshal-common` logging rules exclude them.
+- **Secrets are marked at the field.** `x-rackmarshal-sensitive` is a struct tag, so a property cannot be
+  added without the marking travelling with it. The SDK redacts them and `rackmarshal-common` excludes them.
 - **Review.** `CODEOWNERS` requires the identity and gateway owners on changes to security schemes,
   `security`, or `x-rackmarshal-audience`.
 - **Supply chain.** Generators are pinned by version, and releases publish the starters' signed SBOMs.
 
 ### Environment awareness
 
-The contract is environment-neutral: no environment names in paths, and `servers` lists only `/`.
-Environment binding — tokens carrying the environment ID and SPIFFE trust domains
-([Environment identity](0001-project-repositories.md#environment-identity)) — is described in the
-security scheme descriptions and enforced by `rackmarshal-identity` and `rackmarshal-gateway`. Services that serve the
-embedded document keep the OpenAPI UI off in `production` and `staging`, per 0001's
+The types are environment-neutral: no environment names in paths, and `servers` lists only `/`. Environment
+binding — tokens carrying the environment ID, SPIFFE trust domains
+([Environment identity](0001-project-repositories.md#environment-identity)) — is enforced by
+`rackmarshal-identity` and `rackmarshal-gateway`. Services serving a generated document keep the OpenAPI UI
+off in `production` and `staging`, per 0001's
 [hardened defaults](0001-project-repositories.md#environment-awareness).
 
 ### Logging & telemetry
 
-The repository does not log. The contract carries `traceId` in problem details, and `common/v1` documents
-W3C `traceparent` and `tracestate` propagation ([Trace Context](https://www.w3.org/TR/trace-context/)) and
-`X-Request-Id` without modeling them per operation.
-
-### Configuration
-
-None at runtime. Generator settings live in `codegen/`, and lint rules in `rules/rackmarshal.vacuum.yaml`.
+None at runtime; this module has no runtime. The generator and drift checks log to CI output only.
 
 ### Build, release & versioning
 
-- **Bootstrap** from `go-library-starter`, then remove its example and runtime packages (`greeter`,
-  `pool`, `health`, `config`, `logging`, `obfusicate`, `errors`, `env`). Keep `version.txt` behind a
-  standard-library-only accessor, which drops `Masterminds/semver`.
-- **Tasks** — `lint:openapi` (vacuum with the Rackmarshal ruleset), `breaking` (oasdiff against the last tag),
-  `generate` (oapi-codegen and `info.version`), `check:drift` (regenerate and diff), `test` (root and
-  `conformance`).
-- **CI** — the 200-series pull request workflow runs lint, breaking, drift, and tests; 300 repeats them on
-  `main`; the 100-series release runs semantic-release and then asks `rackmarshal-sdk` to regenerate
-  ([0003](0003-rackmarshal-sdk.md)).
-- **Versioning** — `v0.x` until accepted, per [CONVENTIONS.md](CONVENTIONS.md).
+- **Tasks** — `generate` (documents and reference material from the types), `check:drift` (regenerate and
+  diff), `lint` (vacuum), `breaking` (oasdiff), and `test` for the root and nested modules.
+- **CI** — the 200-series pull request workflow runs lint, breaking, drift, and tests; the 300-series repeats
+  them on main.
+- **Module** — `github.com/servercurio/rackmarshal-api-schema`, `v0.x` from Conventional Commits, with the
+  Go package version independent of the API versions it contains.
 
 ### Testing
 
-- **Lint** every document with the Rackmarshal ruleset: extensions present, `security` explicit, banned
-  formats absent, problem responses referenced, and naming rules.
-- **Examples** — every file in `examples/` is validated against its operation or kind. Valid samples must
-  pass and invalid samples must fail with the expected pointer.
-- **Round trip** — desired-state examples decode into the Go types, re-encode, and still validate, which
-  catches fields missing from the hand-written types.
-- **Drift and compatibility** — regenerated models must match committed code, and oasdiff must pass.
+- **Round trip** — every example decodes into the Go types, re-encodes, and still validates against the
+  generated document.
+- **Generated artefact drift** — documents, component schemas, and reference documentation are regenerated
+  in CI and the build fails on any diff.
+- **Examples** — valid samples must pass and invalid samples must fail with the expected pointer and code.
 - **Dependency budget** — a test fails if the root `go.mod` gains any requirement.
 
 ## Alternatives considered
 
-- **Protobuf and gRPC, with grpc-gateway for REST** — puts gRPC in every service, which 0001's telemetry
-  decision worked to avoid.
-- **Protobuf with [Connect](https://connectrpc.com/docs/go/getting-started/)** — light
-  (`connectrpc.com/connect` v1.21.0 requires only `google.golang.org/protobuf` and `go-cmp`) and
-  gRPC-compatible. It was not chosen because it diverges from the Echo and OpenAPI starters, adds a
-  protobuf toolchain such as [Buf](https://buf.build/docs/), and serves third-party REST clients worse.
-  Worth revisiting if internal call volume makes JSON costly.
-- **Code-first OpenAPI in each service** (the starter's generator) — the contract would appear only after
-  implementation, split across repositories, so `rackmarshal-sdk` could not come first.
-- **OpenAPI 3.0.3** — the broadest tool support and the starter's current output, but its schema dialect
-  differs from JSON Schema 2020-12, which would split the API and desired-state schema styles.
-- **[ogen](https://github.com/ogen-go/ogen)** — its `go.mod` (v1.24.0) requires OpenTelemetry, zap,
-  fasthttp, and more; too heavy for a zero-dependency module.
-- **oapi-codegen's `echo5-server` or strict server in services** — checks conformance at compile time, but
-  links `github.com/oapi-codegen/runtime`, whose `go.mod` requires gin, iris, and Echo v4. Left open.
-- **Spectral or Redocly for linting** — Node toolchains. vacuum is Go, Spectral-compatible, and fits the
-  starters' Taskfile.
-- **Generating models only in `rackmarshal-sdk`** — services would import a client SDK to get server types.
+- **Contract-first OpenAPI 3.1** — the position this document originally took: hand-written documents,
+  hand-written JSON Schema files, Go models generated from them. Reversed because it left three descriptions
+  of one kind with nothing forcing agreement, which is how the portal's wizard came to generate inferred
+  YAML. The parallelism it was protecting is preserved by keeping the types out of the services.
+- **Keeping the JSON Schema files alongside generated documents** — would let API bodies `$ref` a manifest
+  schema. Rejected as the second description all over again, and unnecessary once one Go type describes both.
+- **OpenAPI 3.1 by replacing the starter's generator** — keeps the richer dialect at the cost of replacing
+  `internal/openapi` in an external starter repository before any of this can proceed. Not chosen; 3.0 is
+  sufficient once the schema files are gone.
+- **A separate repository for the types** — considered when the SDK's ordering problem surfaced. Unnecessary:
+  `rackmarshal-api-schema` is that repository, correctly defined.
 
 ## Open questions
 
-- **Base URL** for problem `type` URIs and schema `$id`s. `rackmarshal.servercurio.com` appears in 0001 only as
-  an `apiVersion` group, and whether the project controls that domain is unverified.
-- **Tenancy** — derive the tenant from the token's principal (proposed) or put `/tenants/{tenantId}` in
-  paths?
-- **Service conformance** — models, the starter router, and contract tests (proposed), or generated
-  strict servers despite the runtime dependency?
-- **Desired-state types** — adopt a JSON Schema-to-Go generator, or keep hand-written types behind
-  round-trip tests?
-- **3.1 validation** — kin-openapi's `openapi3filter` behavior on OpenAPI 3.1 documents is unverified;
-  libopenapi-validator is the fallback.
-- **IDs** — opaque strings (proposed), or a standard sortable format?
+- **Which generator** emits OpenAPI 3.0 from Go types and route declarations, and does this repository emit
+  only the shared components while each service emits its own paths?
+- **How route annotations are expressed** in Go so `x-rackmarshal-audience` and `x-rackmarshal-idempotent`
+  reach the generated document — struct tags, a registration call, or a comment convention?
+- **Does `rackmarshal-sdk` still need a generator at all** if it builds its client from these types
+  directly ([0003](0003-rackmarshal-sdk.md))?
+- **Policy state** — `EvalMetadata` and `PolicyRef` are proposed from what 0011 and 0012 already record.
+  What else does a policy author or the audit trail need typed?
+- **Reference documentation format** — godoc, generated Markdown, or both, and does it live here or beside
+  the design documents?
 
 ## References
 
-- [0001 — Project Repositories](0001-project-repositories.md) — inventory, desired-state format,
-  environment identity, and resolved decisions.
-- [CONVENTIONS.md](CONVENTIONS.md) — cross-cutting conventions derived from this document.
-- [OpenAPI Specification 3.1.1](https://spec.openapis.org/oas/v3.1.1.html) — including the
-  [Security Scheme Object](https://spec.openapis.org/oas/v3.1.1.html#security-scheme-object) and
-  `mutualTLS`.
-- [JSON Schema 2020-12](https://json-schema.org/draft/2020-12) — dialect for desired-state schemas.
-- [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) — Problem Details for HTTP APIs.
-- [RFC 9745](https://www.rfc-editor.org/rfc/rfc9745) — the Deprecation HTTP response header.
-- [RFC 8594](https://www.rfc-editor.org/rfc/rfc8594) — the Sunset HTTP header.
-- [RFC 3339](https://www.rfc-editor.org/rfc/rfc3339) — timestamp format.
-- [Kubernetes API versioning](https://kubernetes.io/docs/reference/using-api/#api-versioning) and
-  [deprecation policy](https://kubernetes.io/docs/reference/using-api/deprecation-policy/).
-- [W3C Trace Context](https://www.w3.org/TR/trace-context/) — `traceparent` and `tracestate`.
-- [oapi-codegen](https://github.com/oapi-codegen/oapi-codegen) — README: OpenAPI 3.0/3.1 support,
-  `echo5-server`, `import-mapping`, models-only generation.
-- [oapi-codegen/runtime `go.mod`](https://github.com/oapi-codegen/runtime/blob/main/go.mod) — requires
-  gin, iris, and Echo v4.
-- [kin-openapi](https://github.com/getkin/kin-openapi) — OpenAPI 3.0/3.1 parsing and `openapi3filter`.
-- [oasdiff](https://github.com/oasdiff/oasdiff) — breaking-change detection; README lists 3.1/3.2 support.
-- [vacuum](https://github.com/daveshanley/vacuum) — Spectral-compatible linter;
-  [libopenapi](https://github.com/pb33f/libopenapi) — its parser, supporting OpenAPI 3.0–3.2.
-- [santhosh-tekuri/jsonschema](https://github.com/santhosh-tekuri/jsonschema) — JSON Schema validator.
-- [Connect for Go](https://connectrpc.com/docs/go/getting-started/) and its
-  [v1.21.0 `go.mod`](https://github.com/connectrpc/connect-go/blob/v1.21.0/go.mod).
-- [ogen](https://github.com/ogen-go/ogen) — alternative OpenAPI generator.
-- [Buf](https://buf.build/docs/) — protobuf toolchain named in alternatives.
-- [Go `embed` package](https://pkg.go.dev/embed).
-- [go-echo-starter](https://github.com/servercurio/go-echo-starter) — `internal/openapi` (OpenAPI 3.0 from
-  route metadata) and `800-call-openapi-drift.yaml`.
-- [go-library-starter `.releaserc.json`](https://github.com/servercurio/go-library-starter/blob/main/.releaserc.json)
-  — `prepareCmd` runs `task generate`.
-- [`hashicorp/go-plugin`](https://github.com/hashicorp/go-plugin) — plugin transport kept out of this repo.
+- [0001 — Project Repositories](0001-project-repositories.md) — inventory, desired-state format, build order.
+- [0003 — rackmarshal-sdk](0003-rackmarshal-sdk.md) — the client built from these types.
+- [0011 — rackmarshal-provisioner](0011-rackmarshal-provisioner.md) — OPA phases, policies, and admission.
+- [0012 — rackmarshal-agent](0012-rackmarshal-agent.md) — host-phase policy and what the agent refuses.
+- [0020 — Desired-state kinds](0020-desired-state-kinds.md) — the manifest kinds these types carry.
+- [OpenAPI Specification 3.0.3](https://spec.openapis.org/oas/v3.0.3.html) — the generated document version.
+- [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) — problem details.
+- [oasdiff](https://github.com/oasdiff/oasdiff) — breaking-change detection.
+- [vacuum](https://github.com/daveshanley/vacuum) — linting, built on libopenapi.
+- [go-echo-starter](https://github.com/servercurio/go-echo-starter) — `internal/openapi`, which generates a
+  document from route metadata and drift-checks it in CI.

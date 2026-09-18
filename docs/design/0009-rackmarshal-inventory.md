@@ -70,7 +70,8 @@ that proves the full request loop ([Sequencing](0001-project-repositories.md#seq
   only through reports. Neither overwrites the other: a reported hostname never renames an endpoint.
 - **Classes.** Built-in classes ship as embedded YAML and cannot be changed. Tenants may add classes with
   names that do not collide with built-ins. A class's `attributeSchema` and optional `factSchema` are
-  JSON Schema 2020-12, matching the dialect of 0002. Removing a class that endpoints still use is refused.
+  JSON Schema 2020-12. These are tenant-supplied at runtime and unrelated to the Go types in 0002, which
+  describe Rackmarshal's own contracts. Removing a class that endpoints still use is refused.
 - **Labels** follow the Kubernetes syntax: an optional DNS-subdomain prefix, then a name of 63 characters
   or fewer. The `rackmarshal.servercurio.com/` prefix is reserved. Selectors support `=`, `!=`, `in`, `notin`,
   and key existence.

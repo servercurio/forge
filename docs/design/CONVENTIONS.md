@@ -24,9 +24,10 @@ convention says so under Alternatives considered and links the convention it bre
 | 0008 | `rackmarshal-gateway`        | 0015 | `rackmarshal-plugin-starter`   |
 | 0016 | *web UI architecture*  | 0018 | `rackmarshal-console`          |
 | 0017 | `rackmarshal-portal`         | 0019 | *brand identity*         |
+| 0020 | *desired-state kinds*  |      |                          |
 
-0016 and 0019 describe no single repository, so they are named for their subject rather than for a
-module, as 0001 is.
+0016, 0019, and 0020 describe no single repository, so they are named for their subject rather than for
+a module, as 0001 is.
 
 - File `NNNN-rackmarshal-<name>.md`, title `# NNNN — rackmarshal-<name>`, header and sections from
   [`TEMPLATE.md`](TEMPLATE.md). Proposal subsections, in order, as they apply: Responsibilities;
@@ -45,10 +46,11 @@ module, as 0001 is.
 
 ## API contract and style
 
-- **One contract format.** Every Rackmarshal HTTP API is an OpenAPI 3.1 document in `rackmarshal-api-schema`
-  (`openapi/<service>/<version>/openapi.yaml`); desired-state kinds are JSON Schema 2020-12 files
-  (`schemas/<group>/<version>/<kind>.schema.json`). Contracts come first; code is generated from or
-  tested against them.
+- **Types are the contract.** `rackmarshal-api-schema` holds the Go types for service APIs, for OPA inputs,
+  outputs and policy state, and for desired-state manifests. Those types are authoritative: the OpenAPI 3.0
+  documents and the reference documentation are generated from them, never written by hand, and CI fails on
+  drift. There are no standalone JSON Schema files. [0002](0002-rackmarshal-api-schema.md) sets the
+  direction; [0020](0020-desired-state-kinds.md) specifies the manifest kinds.
 - **REST + JSON, internal and external.** Services call each other over the same contract with mutual
   TLS. There is no service-to-service gRPC; gRPC appears only between `rackmarshal-agent` and plugins, whose
   go-plugin protobuf contract lives in `rackmarshal-agent-plugin-sdk`.
