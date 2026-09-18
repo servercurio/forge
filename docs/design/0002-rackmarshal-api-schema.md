@@ -2,12 +2,12 @@
   ~ SPDX-License-Identifier: Apache-2.0
 -->
 
-# 0002 — forge-api-schema
+# 0002 — rackmarshal-api-schema
 
 - **Status:** Draft
 - **Owner:** Nathan Klick
 - **Date:** 2026-09-15
-- **Summary:** `forge-api-schema` is the single source of truth for Forge's HTTP API contracts, written
+- **Summary:** `rackmarshal-api-schema` is the single source of truth for Rackmarshal's HTTP API contracts, written
   first in OpenAPI 3.1, and for desired-state schemas in JSON Schema 2020-12. It publishes the documents,
   generated Go models with no third-party dependencies, and the lint and breaking-change checks that
   every other repository relies on.
@@ -18,9 +18,9 @@
 
 ## Context & goals
 
-[0001](0001-project-repositories.md#repository-inventory) makes `forge-api-schema` the home of "the
+[0001](0001-project-repositories.md#repository-inventory) makes `rackmarshal-api-schema` the home of "the
 inter-service and client schema" and requires that the wire contract live there once, with clients using
-the generated `forge-sdk` rather than re-deriving types
+the generated `rackmarshal-sdk` rather than re-deriving types
 ([Naming & conventions](0001-project-repositories.md#naming--conventions)). It also publishes the JSON
 Schemas for desired-state documents with Kubernetes-style `apiVersion` and `kind`
 ([Desired-state format](0001-project-repositories.md#desired-state-format)). It is first in the
@@ -29,20 +29,20 @@ repository.
 
 **Goals**
 
-- One contract format and API style for every Forge HTTP API, internal and external.
+- One contract format and API style for every Rackmarshal HTTP API, internal and external.
 - Versioning, deprecation, and error rules that work across independently released repositories.
 - Go models with no third-party dependencies, plus embedded documents that services serve and test against.
-- Catch drift and breaking changes in CI before they reach `forge-sdk` or a service.
+- Catch drift and breaking changes in CI before they reach `rackmarshal-sdk` or a service.
 
 **Non-goals**
 
 - The agent plugin contract — gRPC over `hashicorp/go-plugin`, owned by
-  [0013](0013-forge-agent-plugin-sdk.md).
-- Client behavior such as retries, authentication, and TLS — [0003](0003-forge-sdk.md).
-- Token formats, RBAC, and the enrollment token encoding — [0006](0006-forge-identity.md).
-- Gateway routing, rate limits, and principal propagation — [0008](0008-forge-gateway.md).
+  [0013](0013-rackmarshal-agent-plugin-sdk.md).
+- Client behavior such as retries, authentication, and TLS — [0003](0003-rackmarshal-sdk.md).
+- Token formats, RBAC, and the enrollment token encoding — [0006](0006-rackmarshal-identity.md).
+- Gateway routing, rate limits, and principal propagation — [0008](0008-rackmarshal-gateway.md).
 - The resources each service exposes — each service's own document.
-- SAML and OIDC protocol endpoints in `forge-sso` and `forge-identity`; they follow their standards.
+- SAML and OIDC protocol endpoints in `rackmarshal-sso` and `rackmarshal-identity`; they follow their standards.
 
 ## Proposal
 
@@ -52,7 +52,7 @@ repository.
 - One JSON Schema 2020-12 file per desired-state `kind` per `apiVersion`.
 - Generated Go models for API documents; Go types for desired-state kinds.
 - Embedded access to every document through `embed.FS`, so services serve the exact contract.
-- The Forge vacuum ruleset, the oasdiff compatibility policy, examples, and drift checks.
+- The Rackmarshal vacuum ruleset, the oasdiff compatibility policy, examples, and drift checks.
 
 ### Interfaces
 
@@ -69,22 +69,22 @@ contract over mutual TLS; there is no service-to-service gRPC. Rationale:
 - **Tools support 3.1.** oapi-codegen v2.8.0 supports OpenAPI 3.0 and 3.1, including `type: [T, "null"]`;
   kin-openapi lists 3.1; oasdiff lists 3.1 and 3.2; vacuum is built on libopenapi, which lists 3.0 to 3.2.
 - **Keeps gRPC out of services.** 0001's
-  [telemetry decision](0001-project-repositories.md#logging-and-telemetry-forge-common) went out of its
-  way to avoid gRPC; it stays confined to `forge-agent` and plugins.
+  [telemetry decision](0001-project-repositories.md#logging-and-telemetry-rackmarshal-common) went out of its
+  way to avoid gRPC; it stays confined to `rackmarshal-agent` and plugins.
 - **Contract before code.** `go-echo-starter` generates OpenAPI 3.0 from route metadata after the code
-  exists. `forge-sdk`, the gateway, and the first services are built in parallel, so the contract must
+  exists. `rackmarshal-sdk`, the gateway, and the first services are built in parallel, so the contract must
   come first.
 
 #### Repository layout
 
 ```
-forge-api-schema/
+rackmarshal-api-schema/
 ├── openapi/
 │   ├── common/v1/components.yaml        # Problem, list envelope, parameters, security schemes
 │   ├── identity/v1alpha1/openapi.yaml
 │   ├── inventory/v1alpha1/openapi.yaml
 │   └── provisioner/v1alpha1/openapi.yaml
-├── schemas/forge.servercurio.com/v1alpha1/<kind>.schema.json
+├── schemas/rackmarshal.servercurio.com/v1alpha1/<kind>.schema.json
 ├── examples/                            # valid and invalid samples for every operation and kind
 ├── pkg/
 │   ├── openapi/                         # embed.FS; Document(service, version string) ([]byte, error)
@@ -93,24 +93,24 @@ forge-api-schema/
 │   ├── inventory/v1alpha1/              # package inventoryv1alpha1 (generated)
 │   └── desiredstate/v1alpha1/           # package desiredstatev1alpha1 (hand-written kinds)
 ├── codegen/                             # one oapi-codegen config per document
-├── rules/forge.vacuum.yaml              # Spectral-compatible ruleset
+├── rules/rackmarshal.vacuum.yaml              # Spectral-compatible ruleset
 ├── conformance/                         # nested Go module: validation and round-trip tests
 └── Taskfile.yaml
 ```
 
-Every API starts at `v1alpha1`. `forge-gateway` and `forge-sso` add documents only for JSON APIs they own.
+Every API starts at `v1alpha1`. `rackmarshal-gateway` and `rackmarshal-sso` add documents only for JSON APIs they own.
 
 #### Paths, operations, and extensions
 
 Paths follow `/<service>/<version>/<plural-resource>[/{id}]` in kebab-case, and `operationId` is a
-lowerCamelCase verb-noun unique within its document. Three Forge extensions carry metadata other
+lowerCamelCase verb-noun unique within its document. Three Rackmarshal extensions carry metadata other
 repositories act on:
 
 | Extension            | Applies to      | Values                                   | Used by                            |
 |----------------------|-----------------|------------------------------------------|------------------------------------|
-| `x-forge-audience`   | operation       | array of `operator`, `agent`, `internal` | gateway routing, SDK docs, lint    |
-| `x-forge-sensitive`  | schema property | `true`                                   | SDK redaction, logging rules       |
-| `x-forge-idempotent` | POST operation  | `true`                                   | SDK retry policy                   |
+| `x-rackmarshal-audience`   | operation       | array of `operator`, `agent`, `internal` | gateway routing, SDK docs, lint    |
+| `x-rackmarshal-sensitive`  | schema property | `true`                                   | SDK redaction, logging rules       |
+| `x-rackmarshal-idempotent` | POST operation  | `true`                                   | SDK retry policy                   |
 
 `common/v1` defines two security schemes: `bearerAuth` (`type: http`, `scheme: bearer`) and `mutualTLS`
 (a scheme type OpenAPI 3.1 defines). `operator` operations require `bearerAuth`, while `agent` and
@@ -124,7 +124,7 @@ paths:
   /inventory/v1alpha1/endpoints:
     get:
       operationId: listEndpoints
-      x-forge-audience: [operator]
+      x-rackmarshal-audience: [operator]
       security: [{ bearerAuth: [] }]
       parameters:
         - $ref: "../../common/v1/components.yaml#/components/parameters/Limit"
@@ -145,7 +145,7 @@ lowerCamelCase, timestamps are RFC 3339 in UTC, and IDs are opaque strings.
 #### Error model
 
 Every non-2xx response uses `application/problem+json` from
-[RFC 9457](https://www.rfc-editor.org/rfc/rfc9457), defined once in `common/v1`, with three Forge
+[RFC 9457](https://www.rfc-editor.org/rfc/rfc9457), defined once in `common/v1`, with three Rackmarshal
 extension members:
 
 ```json
@@ -176,8 +176,8 @@ people. `errors` follows the shape of RFC 9457's own example. `traceId` connects
 - **Module version** — the Go module uses semantic versioning independently of API versions. Each
   document's `info.version` is set to the module release version by `task generate`, which the
   starters' semantic-release `prepareCmd` already runs.
-- **Desired-state schemas** follow the same stages under the `forge.servercurio.com` group from 0001.
-  Converting between versions belongs to `forge-provisioner` ([0011](0011-forge-provisioner.md)).
+- **Desired-state schemas** follow the same stages under the `rackmarshal.servercurio.com` group from 0001.
+  Converting between versions belongs to `rackmarshal-provisioner` ([0011](0011-rackmarshal-provisioner.md)).
 
 #### Go packages
 
@@ -195,9 +195,9 @@ people. `errors` follows the shape of RFC 9457's own example. `traceId` connects
 
 ### Dependencies
 
-- **Forge repositories** — none upstream. Consumers: `forge-sdk` (models and documents), every service
-  (models and embedded documents), `forge-gateway` (audience metadata), and `forge-provisioner` and
-  `forge-agent` (desired-state schemas and types).
+- **Rackmarshal repositories** — none upstream. Consumers: `rackmarshal-sdk` (models and documents), every service
+  (models and embedded documents), `rackmarshal-gateway` (audience metadata), and `rackmarshal-provisioner` and
+  `rackmarshal-agent` (desired-state schemas and types).
 - **Root module** — the Go standard library only.
 - **`conformance` module** — [kin-openapi](https://github.com/getkin/kin-openapi) v0.149.0 to validate
   examples against operations, and
@@ -217,12 +217,12 @@ None. Documents live in Git; the module holds no runtime state.
 
 - **Security lives in the contract.** Lint fails on any operation without an explicit `security`. An
   empty `security: []` is allowed only on an allowlisted set: enrollment and health.
-- **Audiences bound exposure.** The gateway builds its route tables from `x-forge-audience`, so an
-  operation is never reachable on an ingress it was not declared for ([0008](0008-forge-gateway.md)).
+- **Audiences bound exposure.** The gateway builds its route tables from `x-rackmarshal-audience`, so an
+  operation is never reachable on an ingress it was not declared for ([0008](0008-rackmarshal-gateway.md)).
 - **Secrets are marked.** Tokens, enrollment tokens, and projected service account tokens carry
-  `x-forge-sensitive: true`. The SDK redacts them and `forge-common` logging rules exclude them.
+  `x-rackmarshal-sensitive: true`. The SDK redacts them and `rackmarshal-common` logging rules exclude them.
 - **Review.** `CODEOWNERS` requires the identity and gateway owners on changes to security schemes,
-  `security`, or `x-forge-audience`.
+  `security`, or `x-rackmarshal-audience`.
 - **Supply chain.** Generators are pinned by version, and releases publish the starters' signed SBOMs.
 
 ### Environment awareness
@@ -230,7 +230,7 @@ None. Documents live in Git; the module holds no runtime state.
 The contract is environment-neutral: no environment names in paths, and `servers` lists only `/`.
 Environment binding — tokens carrying the environment ID and SPIFFE trust domains
 ([Environment identity](0001-project-repositories.md#environment-identity)) — is described in the
-security scheme descriptions and enforced by `forge-identity` and `forge-gateway`. Services that serve the
+security scheme descriptions and enforced by `rackmarshal-identity` and `rackmarshal-gateway`. Services that serve the
 embedded document keep the OpenAPI UI off in `production` and `staging`, per 0001's
 [hardened defaults](0001-project-repositories.md#environment-awareness).
 
@@ -242,24 +242,24 @@ W3C `traceparent` and `tracestate` propagation ([Trace Context](https://www.w3.o
 
 ### Configuration
 
-None at runtime. Generator settings live in `codegen/`, and lint rules in `rules/forge.vacuum.yaml`.
+None at runtime. Generator settings live in `codegen/`, and lint rules in `rules/rackmarshal.vacuum.yaml`.
 
 ### Build, release & versioning
 
 - **Bootstrap** from `go-library-starter`, then remove its example and runtime packages (`greeter`,
   `pool`, `health`, `config`, `logging`, `obfusicate`, `errors`, `env`). Keep `version.txt` behind a
   standard-library-only accessor, which drops `Masterminds/semver`.
-- **Tasks** — `lint:openapi` (vacuum with the Forge ruleset), `breaking` (oasdiff against the last tag),
+- **Tasks** — `lint:openapi` (vacuum with the Rackmarshal ruleset), `breaking` (oasdiff against the last tag),
   `generate` (oapi-codegen and `info.version`), `check:drift` (regenerate and diff), `test` (root and
   `conformance`).
 - **CI** — the 200-series pull request workflow runs lint, breaking, drift, and tests; 300 repeats them on
-  `main`; the 100-series release runs semantic-release and then asks `forge-sdk` to regenerate
-  ([0003](0003-forge-sdk.md)).
+  `main`; the 100-series release runs semantic-release and then asks `rackmarshal-sdk` to regenerate
+  ([0003](0003-rackmarshal-sdk.md)).
 - **Versioning** — `v0.x` until accepted, per [CONVENTIONS.md](CONVENTIONS.md).
 
 ### Testing
 
-- **Lint** every document with the Forge ruleset: extensions present, `security` explicit, banned
+- **Lint** every document with the Rackmarshal ruleset: extensions present, `security` explicit, banned
   formats absent, problem responses referenced, and naming rules.
 - **Examples** — every file in `examples/` is validated against its operation or kind. Valid samples must
   pass and invalid samples must fail with the expected pointer.
@@ -278,7 +278,7 @@ None at runtime. Generator settings live in `codegen/`, and lint rules in `rules
   protobuf toolchain such as [Buf](https://buf.build/docs/), and serves third-party REST clients worse.
   Worth revisiting if internal call volume makes JSON costly.
 - **Code-first OpenAPI in each service** (the starter's generator) — the contract would appear only after
-  implementation, split across repositories, so `forge-sdk` could not come first.
+  implementation, split across repositories, so `rackmarshal-sdk` could not come first.
 - **OpenAPI 3.0.3** — the broadest tool support and the starter's current output, but its schema dialect
   differs from JSON Schema 2020-12, which would split the API and desired-state schema styles.
 - **[ogen](https://github.com/ogen-go/ogen)** — its `go.mod` (v1.24.0) requires OpenTelemetry, zap,
@@ -287,11 +287,11 @@ None at runtime. Generator settings live in `codegen/`, and lint rules in `rules
   links `github.com/oapi-codegen/runtime`, whose `go.mod` requires gin, iris, and Echo v4. Left open.
 - **Spectral or Redocly for linting** — Node toolchains. vacuum is Go, Spectral-compatible, and fits the
   starters' Taskfile.
-- **Generating models only in `forge-sdk`** — services would import a client SDK to get server types.
+- **Generating models only in `rackmarshal-sdk`** — services would import a client SDK to get server types.
 
 ## Open questions
 
-- **Base URL** for problem `type` URIs and schema `$id`s. `forge.servercurio.com` appears in 0001 only as
+- **Base URL** for problem `type` URIs and schema `$id`s. `rackmarshal.servercurio.com` appears in 0001 only as
   an `apiVersion` group, and whether the project controls that domain is unverified.
 - **Tenancy** — derive the tenant from the token's principal (proposed) or put `/tenants/{tenantId}` in
   paths?

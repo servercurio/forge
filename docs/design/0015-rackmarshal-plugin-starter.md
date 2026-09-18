@@ -2,16 +2,16 @@
   ~ SPDX-License-Identifier: Apache-2.0
 -->
 
-# 0015 — forge-plugin-starter
+# 0015 — rackmarshal-plugin-starter
 
 - **Status:** Draft
 - **Owner:** Nathan Klick
 - **Date:** 2026-09-15
-- **Summary:** `forge-plugin-starter` is a Forge-owned GitHub template, derived from `go-cli-starter`,
-  with a working example plugin wired to `forge-agent-plugin-sdk`. It includes a rename tool, a local
+- **Summary:** `rackmarshal-plugin-starter` is a Rackmarshal-owned GitHub template, derived from `go-cli-starter`,
+  with a working example plugin wired to `rackmarshal-agent-plugin-sdk`. It includes a rename tool, a local
   fake agent, and CI that produces the same signed, SBOM-backed release assets as the first-party
-  plugins, so third parties can meet `forge-provisioner`'s import verification and the agents' on-host
-  validator without Forge's help. Third-party plugins are never core-signed.
+  plugins, so third parties can meet `rackmarshal-provisioner`'s import verification and the agents' on-host
+  validator without Rackmarshal's help. Third-party plugins are never core-signed.
 
 > An initial draft with concrete proposals, bounded by the
 > [Resolved decisions](0001-project-repositories.md#resolved-decisions) in 0001. Conventions other
@@ -19,27 +19,27 @@
 
 ## Context & goals
 
-0001 defines `forge-plugin-starter` as "the project-owned scaffold third parties clone to author their
-own" plugins. Unlike the general-purpose `go-*-starter` baselines, it is Forge-specific and depends on
-`forge-agent-plugin-sdk`
-([Agent plugin ecosystem](0001-project-repositories.md#agent-plugin-ecosystem)). `forge-provisioner`
+0001 defines `rackmarshal-plugin-starter` as "the project-owned scaffold third parties clone to author their
+own" plugins. Unlike the general-purpose `go-*-starter` baselines, it is Rackmarshal-specific and depends on
+`rackmarshal-agent-plugin-sdk`
+([Agent plugin ecosystem](0001-project-repositories.md#agent-plugin-ecosystem)). `rackmarshal-provisioner`
 imports only plugin releases whose cosign signature matches a trusted publisher, agents run only the
 digests it pins, and the core `sigstore` validator on each host verifies the signature again before
 install, so a correct release pipeline must be the default.
 
 **Goals**
 
-- Clone, rename, pass `task test`, and cut a verifiable release, with no Forge involvement.
+- Clone, rename, pass `task test`, and cut a verifiable release, with no Rackmarshal involvement.
 - The least-privilege plugin as the default: unprivileged, with no network and no exec.
-- The same assets, manifest, and publisher signing model as [0014](0014-forge-agent-plugins.md).
+- The same assets, manifest, and publisher signing model as [0014](0014-rackmarshal-agent-plugins.md).
 - A repeatable way to pick up `go-cli-starter` and SDK changes, and clear licensing guidance.
 
 **Non-goals**
 
-- A registry, a marketplace, or Forge certification of third-party plugins.
+- A registry, a marketplace, or Rackmarshal certification of third-party plugins.
 - Core signing: third-party plugins are never core-signed and never core plugins (0014).
-- The contract ([0013](0013-forge-agent-plugin-sdk.md)) and agent verification
-  ([0012](0012-forge-agent.md)).
+- The contract ([0013](0013-rackmarshal-agent-plugin-sdk.md)) and agent verification
+  ([0012](0012-rackmarshal-agent.md)).
 - Legal advice; the licensing section is guidance only.
 
 ## Proposal
@@ -55,8 +55,8 @@ install, so a correct release pipeline must be the default.
 #### Repository layout
 
 ```
-forge-plugin-starter/
-├── cmd/forge-plugin-example/main.go     # serve.Main wiring only
+rackmarshal-plugin-starter/
+├── cmd/rackmarshal-plugin-example/main.go     # serve.Main wiring only
 ├── internal/
 │   ├── example/                         # facts.go (example.greeting), marker.go (Marker kind)
 │   ├── config/                          # Config{Environment, Logging, StateDir, Greeting}
@@ -78,7 +78,7 @@ Removed from `go-cli-starter`:
 - the `copy` command and `internal/obfusicate`;
 - `internal/health`, replaced by the `Check` RPC;
 - the Dockerfile and container tasks;
-- `internal/logging`, replaced by `forge-common` (0001 bootstrap step 4).
+- `internal/logging`, replaced by `rackmarshal-common` (0001 bootstrap step 4).
 
 #### Example plugin
 
@@ -90,23 +90,23 @@ Removed from `go-cli-starter`:
   `privileges: { runAsRoot: false, execPaths: [], network: [] }`, and
   `platforms: [linux/amd64, linux/arm64]`. It never sets `core: true`; the agent refuses that without a
   core signature (0013).
-- **Rename** — `task rename -- -name acme-backup -module github.com/acme/forge-plugin-acme-backup`
+- **Rename** — `task rename -- -name acme-backup -module github.com/acme/rackmarshal-plugin-acme-backup`
   (plus `-group` for the example kind; runs `go run ./tools/rename`) rewrites the module path, `cmd/`,
-  `FORGE_PLUGIN_EXAMPLE` → `FORGE_PLUGIN_ACME_BACKUP`, the manifest, the schema `$id`, workflow
+  `RACKMARSHAL_PLUGIN_EXAMPLE` → `RACKMARSHAL_PLUGIN_ACME_BACKUP`, the manifest, the schema `$id`, workflow
   identity strings, and the README. The starter's own CI renames a copy and runs the full suite, so the
   template stays renameable.
 
 #### Configuration
 
-The starter's loading order: defaults → YAML file → `FORGE_PLUGIN_<NAME>_*` → flags. The environment
+The starter's loading order: defaults → YAML file → `RACKMARSHAL_PLUGIN_<NAME>_*` → flags. The environment
 (name, tier, ID) is not configured here: the agent supplies it in `Init` (0013).
 
 | YAML                                 | Variable                                    | Default                         |
 |--------------------------------------|---------------------------------------------|---------------------------------|
-| `environment.name` / `.tier` / `.id` | `FORGE_PLUGIN_EXAMPLE_ENVIRONMENT_NAME` / … | none — required (0013)          |
-| `logging.default.level`              | `FORGE_PLUGIN_EXAMPLE_LOG_LEVEL`            | `info`                          |
-| `stateDir`                           | `FORGE_PLUGIN_EXAMPLE_STATE_DIR`            | `/var/lib/forge-plugin-example` |
-| `greeting`                           | `FORGE_PLUGIN_EXAMPLE_GREETING`             | `hello`                         |
+| `environment.name` / `.tier` / `.id` | `RACKMARSHAL_PLUGIN_EXAMPLE_ENVIRONMENT_NAME` / … | none — required (0013)          |
+| `logging.default.level`              | `RACKMARSHAL_PLUGIN_EXAMPLE_LOG_LEVEL`            | `info`                          |
+| `stateDir`                           | `RACKMARSHAL_PLUGIN_EXAMPLE_STATE_DIR`            | `/var/lib/rackmarshal-plugin-example` |
+| `greeting`                           | `RACKMARSHAL_PLUGIN_EXAMPLE_GREETING`             | `hello`                         |
 
 `environment`, `rpc`, and `logging` are reserved child keys. Authors add their own keys beside them.
 
@@ -116,8 +116,8 @@ The starter's loading order: defaults → YAML file → `FORGE_PLUGIN_<NAME>_*` 
 task test                  # unit tests via plugintest.InProcess, -race
 task test:conformance      # builds the binary; plugintest.Launch + Conformance
 task build:local
-go run ./tools/fakeagent -plugin bin/forge-plugin-example-linux-amd64 manifest
-go run ./tools/fakeagent -plugin bin/forge-plugin-example-linux-amd64 \
+go run ./tools/fakeagent -plugin bin/rackmarshal-plugin-example-linux-amd64 manifest
+go run ./tools/fakeagent -plugin bin/rackmarshal-plugin-example-linux-amd64 \
   -grant "resource:plugins.example.com/v1alpha1/Marker" apply -f testdata/marker.yaml
 ```
 
@@ -145,7 +145,7 @@ The workflows keep the starter's SHA-pinned actions, `harden-runner`, and a defa
 
 ### Dependencies
 
-- **Forge** — `forge-agent-plugin-sdk` (14 linked modules, measured in 0013) and `forge-common`
+- **Rackmarshal** — `rackmarshal-agent-plugin-sdk` (14 linked modules, measured in 0013) and `rackmarshal-common`
   (`logging`, `environment`).
 - **Kept from `go-cli-starter`'s `go.mod`**:
   - `spf13/cobra` v1.10.2 and `spf13/pflag` v1.0.10 (`mousetrap` v1.1.0 on Windows);
@@ -175,16 +175,16 @@ metadata: { name: acme }
 spec:
   keyless:
     issuer: https://token.actions.githubusercontent.com
-    repository: acme/forge-plugin-acme-backup
+    repository: acme/rackmarshal-plugin-acme-backup
     workflow: .github/workflows/800-call-semantic-release.yaml
     refs: [refs/heads/main]
 ```
 
 - **Two verifications** — every release asset ships an `<asset>.sigstore.json` bundle.
-  `forge-provisioner` verifies it at import ([0011](0011-forge-provisioner.md)), and the core `sigstore`
+  `rackmarshal-provisioner` verifies it at import ([0011](0011-rackmarshal-provisioner.md)), and the core `sigstore`
   validator on each host verifies it again, offline, against the same `PluginPublisher` identity: the
   certificate identity, a transparency-log entry, and, for keyless certificates, an SCT, using a
-  TUF-verified trusted root ([0012](0012-forge-agent.md)). A bundle without a transparency-log entry
+  TUF-verified trusted root ([0012](0012-rackmarshal-agent.md)). A bundle without a transparency-log entry
   fails on hosts.
 - **Key-based option** — when `COSIGN_KEY` is set, for example to a KMS URI, `task sign` runs
   `cosign sign-blob --key` with `--bundle`, and publishers distribute `spec.key.publicKeyPEM`. It suits
@@ -202,12 +202,12 @@ spec:
 ### Environment awareness
 
 The example refuses to start without `environment` configuration and refuses an agent from another
-environment (0013). The docs require plugins to branch on tier through `forge-common`, never on the
+environment (0013). The docs require plugins to branch on tier through `rackmarshal-common`, never on the
 environment name. Tests cover both refusals.
 
 ### Logging & telemetry
 
-`forge-common` logging to stderr with `service.name` `forge-plugin-<name>`, as in 0013. No telemetry
+`rackmarshal-common` logging to stderr with `service.name` `rackmarshal-plugin-<name>`, as in 0013. No telemetry
 export. The docs list the fields the agent adds.
 
 ### Configuration
@@ -222,7 +222,7 @@ See Interfaces.
   windows are opt-in. `CGO_ENABLED=0` and `-trimpath`.
 - **`publishCmd`** — `task build && task hash && task sign && task sbom && task index && task verify`,
   producing 0014's assets: `<asset>`, `.sha256`, `.sigstore.json`, `.cdx.json` with its bundle,
-  `forge-plugin-<name>.manifest.yaml`, and `plugins-index.json`, each signed. There is no `coresign`
+  `rackmarshal-plugin-<name>.manifest.yaml`, and `plugins-index.json`, each signed. There is no `coresign`
   step and no `.core.dsse.json`.
 - **Verification and attestations** — `task verify` checks every bundle against the repository's own
   identity before publishing, requiring a transparency-log entry as the host validator does. The
@@ -252,7 +252,7 @@ removed:  [Dockerfile, internal/database/, internal/pool/, internal/obfusicate/,
   - `diverged` changes become an issue for manual review;
   - `removed` paths are ignored.
 - **Downstream plugins** — repositories created from a GitHub template start without its history (not
-  re-verified). They use the same mechanism pointed at `servercurio/forge-plugin-starter` release tags.
+  re-verified). They use the same mechanism pointed at `servercurio/rackmarshal-plugin-starter` release tags.
   `docs/upgrading.md` covers Dependabot SDK bumps and protocol changes.
 
 #### Licensing guidance for third parties
@@ -267,7 +267,7 @@ removed:  [Dockerfile, internal/database/, internal/pool/, internal/obfusicate/,
 - **Copyleft plugins** — the GPL FAQ says fork-and-exec plugins that exchange "complex data structures"
   with the host "can make them one single combined program". Separate processes alone don't settle
   licensing, so authors considering the GPL should get legal advice.
-- **Names** — `forge-plugin-<vendor>-<name>` avoids collisions. A name implies no endorsement; trust
+- **Names** — `rackmarshal-plugin-<vendor>-<name>` avoids collisions. A name implies no endorsement; trust
   comes only from the publisher identity.
 
 ### Testing
@@ -285,35 +285,35 @@ removed:  [Dockerfile, internal/database/, internal/pool/, internal/obfusicate/,
 - **[Copier](https://copier.readthedocs.io)** — `copier update` tracks template changes well, but brings
   a Python toolchain.
 - **Git merges from the starter remote** — no tooling, but renamed paths conflict on every merge.
-- **`forge plugin new` in `forge-cli`** — couples the operator CLI to author tooling.
+- **`rackmarshal plugin new` in `rackmarshal-cli`** — couples the operator CLI to author tooling.
 - **Standard-library `flag` instead of cobra** — fewer modules, but diverges from `go-cli-starter` and
   makes syncs harder.
 - **Keyless-only signing** — excludes publishers that don't build on GitHub Actions or that need to keep
   repository names private.
-- **A Forge-hosted reusable signing workflow** — certificates would name Forge's repository instead of
+- **A Rackmarshal-hosted reusable signing workflow** — certificates would name Rackmarshal's repository instead of
   the publisher's.
-- **Core signing for third-party plugins** — would make Forge a certifier, contradicting the non-goals,
-  and would put the core-plugin key behind code Forge does not own.
+- **Core signing for third-party plugins** — would make Rackmarshal a certifier, contradicting the non-goals,
+  and would put the core-plugin key behind code Rackmarshal does not own.
 - **A permissive, no-attribution license (e.g. 0BSD) for the template** — removes notice obligations,
   but deviates from 0001's Apache-2.0 shared meta.
 - **Deviation from [CONVENTIONS.md](CONVENTIONS.md)** (*Go modules and layout*) — the binary is
-  `forge-plugin-<name>`, not the repository name, matching 0014.
+  `rackmarshal-plugin-<name>`, not the repository name, matching 0014.
 
 ## Open questions
 
 - **Starter license** — keep Apache-2.0 (proposed), or offer the template under 0BSD, which would
   change 0001's shared meta for this repository?
-- **Third-party kinds** — how are groups named, and how do schemas reach `forge-provisioner` and the
-  agent (0013, [0002](0002-forge-api-schema.md))?
-- **Publisher onboarding** — documentation only, or a Forge-maintained list of known identities?
+- **Third-party kinds** — how are groups named, and how do schemas reach `rackmarshal-provisioner` and the
+  agent (0013, [0002](0002-rackmarshal-api-schema.md))?
+- **Publisher onboarding** — documentation only, or a Rackmarshal-maintained list of known identities?
 - **Platforms** — should darwin and windows become defaults once the agent supports them (0012)?
 - **Sync signing** — which token and GPG key sign the sync commits in downstream repositories?
 
 ## References
 
-- [0001](0001-project-repositories.md), [CONVENTIONS.md](CONVENTIONS.md), [0004](0004-forge-common.md),
-  [0011](0011-forge-provisioner.md), [0012](0012-forge-agent.md),
-  [0013](0013-forge-agent-plugin-sdk.md), [0014](0014-forge-agent-plugins.md).
+- [0001](0001-project-repositories.md), [CONVENTIONS.md](CONVENTIONS.md), [0004](0004-rackmarshal-common.md),
+  [0011](0011-rackmarshal-provisioner.md), [0012](0012-rackmarshal-agent.md),
+  [0013](0013-rackmarshal-agent-plugin-sdk.md), [0014](0014-rackmarshal-agent-plugins.md).
 - [go-cli-starter](https://github.com/servercurio/go-cli-starter) — `go.mod`, `Taskfile.yaml`,
   `.releaserc.json`, workflows, and `naming-standards.md`; no tags or releases as of 2026-09-15.
 - Cosign — [signing blobs](https://docs.sigstore.dev/cosign/signing/signing_with_blobs/) (keyless and

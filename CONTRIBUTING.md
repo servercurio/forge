@@ -4,7 +4,7 @@
 
 # Contributing
 
-Thanks for your interest in `forge`. This repository holds the **documentation, design assets, and
+Thanks for your interest in `rackmarshal`. This repository holds the **documentation, design assets, and
 website** for the Server Curio project family. Contributions are oriented toward clear, accessible
 content and a maintainable site rather than expanding the repository's scope into application code.
 
@@ -18,8 +18,8 @@ content and a maintainable site rather than expanding the repository's scope int
 ## Local setup
 
 ```sh
-git clone https://github.com/servercurio/forge.git
-cd forge
+git clone https://github.com/servercurio/rackmarshal.git
+cd rackmarshal
 hugo server -D    # once the site is scaffolded; serves at http://localhost:1313
 ```
 

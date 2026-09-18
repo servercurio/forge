@@ -2,14 +2,14 @@
   ~ SPDX-License-Identifier: Apache-2.0
 -->
 
-# 0004 — forge-common
+# 0004 — rackmarshal-common
 
 - **Status:** Draft
 - **Owner:** Nathan Klick
 - **Date:** 2026-09-15
-- **Summary:** `forge-common` gives every Forge Go executable the same logging, environment handling, and
+- **Summary:** `rackmarshal-common` gives every Rackmarshal Go executable the same logging, environment handling, and
   telemetry. It provides a zerolog wrapper with trace correlation and service and environment fields, an
-  `environment` package for the four tiers, and OpenTelemetry setup whose Forge-built OTLP/HTTP exporter
+  `environment` package for the four tiers, and OpenTelemetry setup whose Rackmarshal-built OTLP/HTTP exporter
   sends traces and metrics without linking gRPC.
 
 > An initial draft with concrete proposals, bounded by the
@@ -19,12 +19,12 @@
 ## Context & goals
 
 0001 settles the stack in
-[Logging and telemetry](0001-project-repositories.md#logging-and-telemetry-forge-common). The library wraps
+[Logging and telemetry](0001-project-repositories.md#logging-and-telemetry-rackmarshal-common). The library wraps
 the starters' zerolog `logging` package and correlates logs with traces through a zerolog hook. Traces and
-metrics use the OpenTelemetry API and SDK, exported by a permanent Forge-built OTLP/HTTP exporter on
+metrics use the OpenTelemetry API and SDK, exported by a permanent Rackmarshal-built OTLP/HTTP exporter on
 `go.opentelemetry.io/proto/slim/otlp`. Every log event and telemetry resource carries the environment
 name ([Environment awareness](0001-project-repositories.md#environment-awareness)). During bootstrap,
-every Go repository replaces its starter's logging and telemetry with `forge-common`, while config
+every Go repository replaces its starter's logging and telemetry with `rackmarshal-common`, while config
 loading and middleware stay in the starters
 ([Bootstrapping](0001-project-repositories.md#bootstrapping-a-repository-from-a-starter)).
 
@@ -46,8 +46,8 @@ The starters' logging differs by template:
 
 - Config file loading and web-framework middleware, which stay in the starters (0001).
 - Exporting logs over OTLP; logs stay on stdout (see Open questions).
-- Certificates, SPIFFE IDs, and TLS configuration — [0003](0003-forge-sdk.md).
-- Collector deployment and telemetry backends — [0005](0005-forge-infrastructure.md).
+- Certificates, SPIFFE IDs, and TLS configuration — [0003](0003-rackmarshal-sdk.md).
+- Collector deployment and telemetry backends — [0005](0005-rackmarshal-infrastructure.md).
 
 ## Proposal
 
@@ -66,7 +66,7 @@ The starters' logging differs by template:
 #### Package layout
 
 ```
-forge-common/
+rackmarshal-common/
 ├── pkg/
 │   ├── environment/          # Tier, Config, Validate, Hardened, AllowLastResort
 │   ├── service/              # Info{Name, Version, InstanceID}, NewInstanceID
@@ -83,17 +83,17 @@ forge-common/
 #### Wiring in an executable
 
 ```go
-// After the starter's Configure(): defaults → file → FORGE_INVENTORY_* → flags.
+// After the starter's Configure(): defaults → file → RACKMARSHAL_INVENTORY_* → flags.
 if err := cfg.Environment.Validate(); err != nil { return err } // name and known tier required
-svc := service.Info{Name: "forge-inventory", Version: version.Number(), InstanceID: service.NewInstanceID()}
+svc := service.Info{Name: "rackmarshal-inventory", Version: version.Number(), InstanceID: service.NewInstanceID()}
 logging.Initialize(cfg.Logging, cfg.Environment, svc)
 
 shutdown, err := telemetry.Setup(ctx, cfg.Telemetry, cfg.Environment, svc,
-    telemetry.WithClientTLS(certs.ClientTLSConfig)) // e.g. built with forge-sdk's tlsconfig
+    telemetry.WithClientTLS(certs.ClientTLSConfig)) // e.g. built with rackmarshal-sdk's tlsconfig
 if err != nil { return err }
 defer shutdown(context.Background())
 
-logging.Default.Info().Ctx(ctx).Str("forge.tenant.id", tenantID).Msg("endpoint registered")
+logging.Default.Info().Ctx(ctx).Str("rackmarshal.tenant.id", tenantID).Msg("endpoint registered")
 ```
 
 The starters build a logger from environment variables before config is loaded. `Initialize` may
@@ -122,11 +122,11 @@ func (c *Config) AllowLastResort(feature string, log *zerolog.Logger) error
 - **Required values** — `Validate` has no defaults: a missing name or tier, or an unknown tier, fails
   startup.
 - **Trust domain** — `RequireIdentity` checks only that the values are present. Matching the ID against
-  the roots' trust domain happens in `forge-sdk`'s `tlsconfig`, so SPIFFE parsing exists once.
+  the roots' trust domain happens in `rackmarshal-sdk`'s `tlsconfig`, so SPIFFE parsing exists once.
 - **Last-resort gate** — `AllowLastResort` returns an error in `production` unless `feature` is in
   `Overrides`. Every use in `production` is logged at `warn`, and at `info` in other tiers, with
-  `forge.override.feature`. Feature names are kebab-case and owned by their documents, such as
-  `kek-sealed-ca-store` in [0006](0006-forge-identity.md).
+  `rackmarshal.override.feature`. Feature names are kebab-case and owned by their documents, such as
+  `kek-sealed-ca-store` in [0006](0006-rackmarshal-identity.md).
 
 #### `logging`
 
@@ -141,7 +141,7 @@ func (c *Config) AllowLastResort(feature string, log *zerolog.Logger) error
   should also go upstream to the starters.
 - **Fields** — zerolog's field-name globals are pinned to `time`, `level`, `message`, and `error`. Every
   event also carries `service.name`, `service.version`, `service.instance.id`,
-  `deployment.environment.name`, `forge.environment.tier`, and `forge.environment.id` when set.
+  `deployment.environment.name`, `rackmarshal.environment.tier`, and `rackmarshal.environment.id` when set.
 - **Trace correlation** — `TraceHook` implements [`zerolog.Hook`](https://pkg.go.dev/github.com/rs/zerolog#Hook).
   For events logged with `Event.Ctx(ctx)`, it reads the span context from `Event.GetCtx()` and adds
   `trace_id`, `span_id`, and `trace_flags` in lowercase hex, following
@@ -152,7 +152,7 @@ Moving from the starters, including OpenTelemetry
 [HTTP attribute](https://opentelemetry.io/docs/specs/semconv/registry/attributes/http/) names for access
 logs:
 
-| Starter                                              | `forge-common`                                     |
+| Starter                                              | `rackmarshal-common`                                     |
 |------------------------------------------------------|----------------------------------------------------|
 | `logging.Daemon`                                     | `logging.Default`                                  |
 | `<PREFIX>_DAEMON_LOG_*`, `<PREFIX>_HTTP_ACCESS_LOG_*` | `<PREFIX>_LOG_*`, `<PREFIX>_ACCESS_LOG_*`         |
@@ -163,18 +163,18 @@ logs:
 #### `telemetry`
 
 - **`Setup`** builds a resource with the same `service.*`, `deployment.environment.name`, and
-  `forge.environment.*` attributes. It then creates a `TracerProvider` with a batch span processor and
+  `rackmarshal.environment.*` attributes. It then creates a `TracerProvider` with a batch span processor and
   `ParentBased(TraceIDRatioBased(ratio))` sampling, a `MeterProvider` with a periodic reader, and the
   global W3C `propagation.TraceContext` propagator. OpenTelemetry errors go to `logging.Default`,
   rate-limited. When disabled, `Setup` installs no-op providers but keeps the propagator.
 - **Standard variables** — `OTEL_*` variables are not read; configuration has one path.
 - **Wrappers** — `WrapTransport(http.RoundTripper)` injects `traceparent` and records client spans, for
-  `forge-sdk`'s `WithTransportWrapper`. `WrapHandler(http.Handler, ...Option)` extracts the incoming
+  `rackmarshal-sdk`'s `WithTransportWrapper`. `WrapHandler(http.Handler, ...Option)` extracts the incoming
   context, records server spans, and records the `http.server.request.duration` histogram. Services
   adapt it to Echo in their own middleware.
 - **Incoming traces** — `WithTrustIncoming(false)`, the default for public ingress, starts a new trace
   linked to the caller's span instead of adopting it. Internal mutual-TLS listeners set it to true.
-- **Instrumentation** — Forge code imports only the OpenTelemetry API (`otel`, `otel/trace`,
+- **Instrumentation** — Rackmarshal code imports only the OpenTelemetry API (`otel`, `otel/trace`,
   `otel/metric`), never the SDK or the exporters.
 
 #### `telemetry/otlphttp`
@@ -200,7 +200,7 @@ logs:
 
 ### Dependencies
 
-- **Forge repositories** — none. Consumed by every Forge Go executable and by `forge-sdk`'s examples.
+- **Rackmarshal repositories** — none. Consumed by every Rackmarshal Go executable and by `rackmarshal-sdk`'s examples.
 - **Third-party modules** — measured on 2026-09-15 with a throwaway module using zerolog v1.35.1, the
   OpenTelemetry API, SDK, and metric SDK v1.46.0, and `proto/slim/otlp` v1.11.0, plus a protobuf marshal
   and a `net/http` POST. It links **16 modules**:
@@ -224,12 +224,12 @@ None beyond in-memory export batches. The span processor's queue is bounded and 
 ### Security
 
 - **No secrets in telemetry.** Resource attributes and default fields hold no credentials. Collector
-  headers come from `headersFile` and are never logged. Values marked `x-forge-sensitive`
-  ([0002](0002-forge-api-schema.md)) are never logged.
+  headers come from `headersFile` and are never logged. Values marked `x-rackmarshal-sensitive`
+  ([0002](0002-rackmarshal-api-schema.md)) are never logged.
 - **TLS for telemetry.** A plaintext `http://` endpoint is a last-resort feature (`plaintext-telemetry`):
   refused in `production` without an override, and warned in `staging`.
 - **Bounded input.** Incoming `traceparent` values at public ingress start new traces, exporter
-  responses are size-capped, and zerolog JSON-escapes values, so field content cannot forge log lines.
+  responses are size-capped, and zerolog JSON-escapes values, so field content cannot rackmarshal log lines.
 
 ### Environment awareness
 
@@ -297,9 +297,9 @@ dropped batches, go to `logging.Default`, rate-limited, and are not exported, wh
 - **`otelhttp` contrib instrumentation** — an extra module for what two small wrappers do.
 - **Honoring standard `OTEL_*` variables** — familiar, but a second configuration path that bypasses the
   starters' config validation and dump.
-- **Reverse-domain attribute prefix** (`com.servercurio.forge.*`) — what the semantic-convention
+- **Reverse-domain attribute prefix** (`com.servercurio.rackmarshal.*`) — what the semantic-convention
   [naming guidance](https://opentelemetry.io/docs/specs/semconv/general/naming/) recommends, but verbose.
-- **`environment` in each repository or in `forge-sdk`** — duplicates tier logic, or mixes
+- **`environment` in each repository or in `rackmarshal-sdk`** — duplicates tier logic, or mixes
   configuration into the security library.
 
 ## Open questions
@@ -307,11 +307,11 @@ dropped batches, go to `logging.Default`, rate-limited, and are not exported, wh
 - **Scope** — do the `environment` and `service` packages fit a library 0001 describes as logging and
   telemetry?
 - **Log export** — should logs move to OTLP once the Go logs signal is stable?
-- **Attribute prefix** — `forge.*` or `com.servercurio.forge.*`?
+- **Attribute prefix** — `rackmarshal.*` or `com.servercurio.rackmarshal.*`?
 - **Sampling** — are the default ratios right, and is tail sampling at the collector in scope for
-  [0005](0005-forge-infrastructure.md)?
-- **Collector identity** — does the in-environment collector hold a Forge certificate, and under which
-  SPIFFE path, given that `/service/<repository>` names only Forge repositories?
+  [0005](0005-rackmarshal-infrastructure.md)?
+- **Collector identity** — does the in-environment collector hold a Rackmarshal certificate, and under which
+  SPIFFE path, given that `/service/<repository>` names only Rackmarshal repositories?
 - **Temporality** — cumulative (proposed) or delta?
 - **Timestamps** — do existing log pipelines depend on the starters' Unix-second timestamps?
 
@@ -319,7 +319,7 @@ dropped batches, go to `logging.Default`, rate-limited, and are not exported, wh
 
 - [0001 — Project Repositories](0001-project-repositories.md) — telemetry stack, environment awareness,
   bootstrap procedure.
-- [0003 — forge-sdk](0003-forge-sdk.md) — TLS configuration and the transport wrapper hook.
+- [0003 — rackmarshal-sdk](0003-rackmarshal-sdk.md) — TLS configuration and the transport wrapper hook.
 - [CONVENTIONS.md](CONVENTIONS.md) — log fields, attribute names, environment keys.
 - [zerolog](https://github.com/rs/zerolog) — [`Hook`](https://pkg.go.dev/github.com/rs/zerolog#Hook),
   `Event.Ctx`, `Event.GetCtx`.

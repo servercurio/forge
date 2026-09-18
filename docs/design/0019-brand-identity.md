@@ -7,20 +7,20 @@
 - **Status:** Draft
 - **Owner:** Nathan Klick
 - **Date:** 2026-09-16
-- **Summary:** The Forge visual identity, derived entirely from the existing Server Curio mark. It fixes
+- **Summary:** The Rackmarshal visual identity, derived entirely from the existing Server Curio mark. It fixes
   a six-value brand ramp, a plum-carries-action rule that keeps crimson free for failure, measured
-  contrast pairs for both themes, two Forge-specific state ramps, a three-face type system, and an icon
-  system that adopts Lucide and draws the six concepts no icon library has. It also introduces a Forge
+  contrast pairs for both themes, two Rackmarshal-specific state ramps, a three-face type system, and an icon
+  system that adopts Lucide and draws the six concepts no icon library has. It also adopts the Rackmarshal
   product mark, distinct from the Server Curio corporate mark. The machine-readable form is
   `brand/tokens.css`; the reference page is `brand/index.html`.
 
 > An initial draft. The surfaces that consume this are [0016](0016-web-ui-architecture.md),
-> [0017](0017-forge-portal.md), [0018](0018-forge-console.md), and the login site in
-> [0007](0007-forge-sso.md).
+> [0017](0017-rackmarshal-portal.md), [0018](0018-rackmarshal-console.md), and the login site in
+> [0007](0007-rackmarshal-sso.md).
 
 ## Context & goals
 
-`forge` has held a brand mark at `docs/images/logo.svg` since the repository was created, and
+`rackmarshal` has held a brand mark at `docs/images/logo.svg` since the repository was created, and
 `.claude/conventions.md` protects it: one source of truth, no divergent copies, and `logo-mark.svg` must
 keep path data identical to it. What has never existed is anything downstream of the mark — no palette,
 no type system, no rule for which colour means failure. 0016 introduces three browser surfaces that all
@@ -30,7 +30,7 @@ need those answers on the same day, and 0007's login site has needed them since 
 
 - Derive every colour from the existing mark rather than inventing a palette beside it.
 - Publish contrast that was measured, so 0007's WCAG 2.2 AA commitment is checkable.
-- Name the states Forge actually has, not a generic success/warning/error triple.
+- Name the states Rackmarshal actually has, not a generic success/warning/error triple.
 - Ship tokens in a form the UIs consume directly, so the documentation and the product cannot drift.
 
 **Non-goals**
@@ -104,12 +104,12 @@ is a fill, with Anvil text on it at 11.46. And **a dark-theme critical button ta
 white**: white on `#EA5468` is 3.52 and fails, while Anvil on the same fill is 5.54 and passes. It is the
 only place in the system where a label colour flips with the theme.
 
-### Forge's own state vocabulary
+### Rackmarshal's own state vocabulary
 
 A generic success/warning/error triple would not cover what these surfaces must show.
 
-**Endpoint drift** — the four values `forge-provisioner` stores in `endpoint_status`
-([0011](0011-forge-provisioner.md)), rendered as a pill with the word always present, never colour alone:
+**Endpoint drift** — the four values `rackmarshal-provisioner` stores in `endpoint_status`
+([0011](0011-rackmarshal-provisioner.md)), rendered as a pill with the word always present, never colour alone:
 
 | State     | Token      | Meaning                                       |
 |-----------|------------|-----------------------------------------------|
@@ -118,7 +118,7 @@ A generic success/warning/error triple would not cover what these surfaces must 
 | `failed`  | `critical` | The last apply returned an error              |
 | `unknown` | `unknown`  | No report within the expected interval        |
 
-**Environment tier** — Forge components are environment-aware (CONVENTIONS), and an operator with four
+**Environment tier** — Rackmarshal components are environment-aware (CONVENTIONS), and an operator with four
 profiles open needs to know which one a destructive control belongs to. The tier renders as a left
 stripe rather than a filled badge, because it is ambient context rather than an alert.
 
@@ -151,7 +151,7 @@ protect. See Open questions.
 
 ### Icons
 
-Forge adopts an open set for the generic vocabulary and draws the handful of concepts no icon library
+Rackmarshal adopts an open set for the generic vocabulary and draws the handful of concepts no icon library
 has. The adopted set is **Lucide** (ISC, 1600+ icons), whose geometry the drawn glyphs match exactly, so
 the two are indistinguishable in use:
 
@@ -170,7 +170,7 @@ terminals of the mark's rings; Tabler's 6,184 icons (MIT, same 24 × 24 / 2 px g
 but squarer, and Phosphor (MIT, 1,248 icons in six weights) is drawn on a 16 × 16 canvas with more
 personality than a dense operations table wants. Lucide's ISC notice ships with the vendored assets.
 
-**Drawn for Forge.** Six concepts have no reasonable stand-in, and approximating them with a puzzle piece
+**Drawn for Rackmarshal.** Six concepts have no reasonable stand-in, and approximating them with a puzzle piece
 or a generic server would misinform:
 
 | Glyph              | Concept                                         | Construction                          |
@@ -212,14 +212,14 @@ The lockup is three parts on a `0 0 1699 420` canvas:
 |----------|---------------------------------------------|-------------------------------|
 | Mark     | Three rings and three sparks                | The full ramp                 |
 | Wordmark | "Server" then "Curio", drawn as paths       | Ember, then Plum              |
-| Tagline  | "Forge Infrastructure Management", 72 px    | Rose, Open Sans 500           |
+| Tagline  | "Rackmarshal Infrastructure Management", 72 px    | Rose, Open Sans 500           |
 
 **The tagline is the only part that varies.** Sibling Server Curio repositories share the mark and
 wordmark and change the tagline text alone. The wordmark is path data rather than live text, so it is
 never re-set in a typeface or retyped — including in Archivo, which would otherwise look like the
 consistent choice.
 
-**Which to use.** The lockup wherever Forge introduces itself and there is room for it to be read: a
+**Which to use.** The lockup wherever Rackmarshal introduces itself and there is room for it to be read: a
 README, a login page, a document cover. The symbol alone wherever it is recognised rather than read: a
 favicon, an avatar, a collapsed sidebar rail, an app icon.
 
@@ -230,47 +230,41 @@ favicon, an avatar, a collapsed sidebar rail, an app icon.
   ground that drops contrast below 3:1, re-space the mark against the wordmark, retype the wordmark in a
   font, or recreate any of it in another tool.
 
-### The Forge mark
+### The Rackmarshal mark
 
-The Server Curio mark identifies the company; Forge, as one product within it, has its own mark — a
-hammer and anvil. The two are used in different places and are **never locked up together**: a surface
-carries one or the other. A README, a company page, or a document cover uses the Server Curio lockup; a
-Forge application masthead, favicon, or installer uses the Forge mark.
+The Server Curio mark identifies the company; Rackmarshal, as one product within it, has its own mark — a
+server rack with an overlaid five-point marshal badge. The two are used in different places and are
+**never locked up together**: a surface carries one or the other. A README, a company page, or a document
+cover uses the Server Curio lockup; a Rackmarshal application masthead, favicon, or installer uses the
+Rackmarshal mark.
 
-Four directions exist, each as a light and a dark file:
+The mark is the **Command** direction from the supplied kit: a solid cabinet with an offset badge and a
+title-case wordmark. Four assets, an icon and a horizontal lockup in each theme:
 
-| Variant       | File                        | For                                                    |
-|---------------|-----------------------------|--------------------------------------------------------|
-| Heritage      | `forge-mark.svg`            | Primary. Full sunburst and inset linework, 64 px and up |
-| Clean spark   | `forge-mark-spark.svg`      | Fewer rays with one gold accent; dense layouts          |
-| Minimal       | `forge-mark-minimal.svg`    | No rays. Favicons, avatars, anything under 48 px        |
-| Outline       | `forge-mark-outline.svg`    | Open linework. Large display, print, watermarks         |
+| Asset      | File                          | Canvas    | For                                   |
+|------------|-------------------------------|-----------|---------------------------------------|
+| Icon       | `rackmarshal-mark.svg`        | 256 × 256 | Mastheads, favicons, the sidebar rail |
+| Icon, dark | `rackmarshal-mark-dark.svg`   | 256 × 256 | The same, on Anvil                    |
+| Lockup     | `rackmarshal-lockup.svg`      | 857 × 256 | Login, splashes, headers, email       |
+| Lockup, dark | `rackmarshal-lockup-dark.svg` | 857 × 256 | The same, on Anvil                  |
 
-**The pairs do not adapt themselves.** Unlike `tokens.css`, the mark has no theme logic: the light file
-carries Plum and Rose, the dark file (`-dark.svg`) carries Quench and Spark. The consuming surface picks
-the file that matches its ground. Ember appears in none of them, which keeps the mark from reading as an
-alert and leaves crimson free for critical state, exactly as the ramp rule requires.
+**The pairs do not adapt themselves.** Unlike `tokens.css`, the mark has no theme logic: the light files
+carry a Plum cabinet with Anvil lettering, the dark files a Quench cabinet and lettering. The badge is
+Spark in both. The consuming surface picks the file matching its ground. Ember appears in neither, which
+keeps the mark from reading as an alert and leaves crimson free for critical state, exactly as the ramp
+rule requires.
 
-**Heritage has a floor.** Its rays are 5 units on a 668-unit canvas, so below roughly 64 px standalone —
-or a horizontal lockup narrower than about 180 px — they fill in and the mark turns to mud. Use
-`minimal` there instead of shrinking heritage. A favicon is always `minimal`.
+**Minimum size is 32 px for the icon.** The rack indicators simplify as the mark is reduced; below 32 px
+a dedicated simplified favicon is preferable to shrinking this one. The lockup's wordmark sets its own
+floor: below roughly 200 px wide the lettering stops being legible, so use the icon instead.
 
-Two lockups pair the mark with the wordmark, each in light and dark:
+The wordmark reads **Rackmarshal**, one word with a lowercase *m*. It is outlined path data in the
+supplied asset, so rendering never depends on an installed font, and it is not editable in place —
+changing it means regenerating from the kit's `source/build_logos.py`.
 
-| Lockup     | File                          | Canvas    | For                              |
-|------------|-------------------------------|-----------|----------------------------------|
-| Horizontal | `forge-lockup.svg`            | 360 × 140 | Mastheads, headers, email        |
-| Stacked    | `forge-lockup-stacked.svg`    | 420 × 360 | Square or taller space, splashes |
-
-The heritage mark is close to square (its ink measures 530 × 668, an aspect of 0.79), so in the
-horizontal lockup it is set to about 1.6 times the wordmark's cap height and centred on the wordmark's
-optical centre rather than its baseline; baseline alignment leaves it visibly high. The wordmark is
-Archivo 700, outlined to path data as the Server Curio wordmark already is, so rendering never depends
-on an installed font. The wordmark is therefore not editable in place: changing it means regenerating
-the outlines from the font.
-
-- **Never** — put a light mark on a dark ground or the reverse, recolour outside the ramp, lock the Forge
-  mark up with the Server Curio mark, stretch or condense it, or shrink heritage below its floor.
+- **Never** — put a light mark on a dark ground or the reverse, recolour outside the ramp, lock the
+  Rackmarshal mark up with the Server Curio mark, stretch or condense it, separate the badge from the
+  cabinet, or reduce the icon below 32 px.
 
 ### Distribution
 
@@ -280,8 +274,8 @@ the outlines from the font.
 | Reference page      | `docs/design/brand/index.html`  | Humans                          |
 | Mark, full lockup   | `docs/images/logo.svg`          | Mastheads, documents            |
 | Mark, symbol only   | `docs/images/logo-mark.svg`     | Favicons, avatars, sidebar rail |
-| Forge mark          | `docs/images/forge-mark*.svg`   | Forge product surfaces          |
-| Forge lockups       | `docs/images/forge-lockup*.svg` | Forge mastheads and splashes    |
+| Rackmarshal mark    | `docs/images/rackmarshal-mark*.svg`   | Product surfaces, rail, favicon |
+| Rackmarshal lockup  | `docs/images/rackmarshal-lockup*.svg` | Login, splashes, headers        |
 | Drawn icons         | `docs/design/brand/index.html`  | Inline pending extraction       |
 
 `tokens.css` is the single machine-readable source. Each UI repository vendors a copy and CI fails on
@@ -320,8 +314,10 @@ palette, `prefers-color-scheme` redefines tokens for viewers on the system defau
   glyph, or is the absence of the `agent` icon sufficient?
 - **Icon extraction** — the six drawn glyphs live inline in `brand/index.html`. When do they become
   individual SVG files, and does the vendored icon set ship as a sprite or as separate assets?
-- **Forge mark on mixed grounds** — the light and dark files cover solid grounds. What is used over a
-  photograph or a gradient, where neither pairing holds?
+- **Rackmarshal mark on mixed grounds** — the light and dark files cover solid grounds. What is used over
+  a photograph or a gradient, where neither pairing holds?
+- **A simplified favicon** — the kit recommends one below 32 px rather than shrinking the icon. Who draws
+  it, and does it keep the badge or the cabinet?
 - **Print and slide templates** — out of scope here, but the palette will be asked for.
 
 ## References

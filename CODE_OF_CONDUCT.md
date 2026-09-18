@@ -17,7 +17,7 @@ This Code of Conduct applies within all project spaces — issues, pull requests
 
 Reports of unacceptable behavior may be submitted privately using GitHub's private reporting tool for this repository:
 
-1. Open <https://github.com/servercurio/forge/security/advisories/new>.
+1. Open <https://github.com/servercurio/rackmarshal/security/advisories/new>.
 2. Describe the incident, including any relevant context, links, or screenshots.
 
 All reports will be reviewed and investigated promptly and fairly. Reporters' identities will be kept confidential.

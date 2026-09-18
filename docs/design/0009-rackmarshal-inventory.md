@@ -2,16 +2,16 @@
   ~ SPDX-License-Identifier: Apache-2.0
 -->
 
-# 0009 — forge-inventory
+# 0009 — rackmarshal-inventory
 
 - **Status:** Draft
 - **Owner:** Nathan Klick
 - **Date:** 2026-09-15
-- **Summary:** `forge-inventory` is the tenant-scoped source of truth for every managed endpoint. Each
+- **Summary:** `rackmarshal-inventory` is the tenant-scoped source of truth for every managed endpoint. Each
   endpoint has a class that fixes its enforcement path and attribute schema, operator-declared labels and
   attributes, agent- or provisioner-reported facts, and a revision history. Data lives in PostgreSQL behind
   row-level security, migrated with goose. The service accepts agent reports through the gateway's agent
-  ingress and feeds `forge-provisioner` a change stream.
+  ingress and feeds `rackmarshal-provisioner` a change stream.
 
 > An initial draft with concrete proposals, bounded by the
 > [Resolved decisions](0001-project-repositories.md#resolved-decisions) in 0001. Conventions other
@@ -19,8 +19,8 @@
 
 ## Context & goals
 
-0001 makes `forge-inventory` the "source-of-truth catalog and schemas of the managed servers, network
-devices, and remote endpoints" and the upstream for `forge-agent`'s reported inventory
+0001 makes `rackmarshal-inventory` the "source-of-truth catalog and schemas of the managed servers, network
+devices, and remote endpoints" and the upstream for `rackmarshal-agent`'s reported inventory
 ([Repository inventory](0001-project-repositories.md#repository-inventory)). Both enforcement paths, agent
 and agentless, converge against it, and the endpoint class decides which path covers an endpoint
 ([Desired-state model](0001-project-repositories.md#desired-state-model--one-authority-two-enforcement-paths)).
@@ -32,14 +32,14 @@ that proves the full request loop ([Sequencing](0001-project-repositories.md#seq
 - A resource model that separates what operators declare from what endpoints report.
 - Hard tenant isolation, enforced in the database as well as in code.
 - Cheap, idempotent ingestion of frequent agent reports.
-- A queryable history and a change stream that `forge-provisioner` can reconcile from.
+- A queryable history and a change stream that `rackmarshal-provisioner` can reconcile from.
 
 **Non-goals**
 
-- Desired state, directives, and compliance results — [0011](0011-forge-provisioner.md).
-- Agent identity, certificates, and tenants as accounts — [0006](0006-forge-identity.md).
+- Desired state, directives, and compliance results — [0011](0011-rackmarshal-provisioner.md).
+- Agent identity, certificates, and tenants as accounts — [0006](0006-rackmarshal-identity.md).
 - Device credentials for agentless management — not stored here (see Open questions).
-- Fact collection on hosts — [0012](0012-forge-agent.md) and its plugins.
+- Fact collection on hosts — [0012](0012-rackmarshal-agent.md) and its plugins.
 
 ## Proposal
 
@@ -47,9 +47,9 @@ that proves the full request loop ([Sequencing](0001-project-repositories.md#seq
 
 - **Catalog** — endpoints, endpoint classes, and relationships per tenant.
 - **Schemas** — class-defined JSON Schemas for declared attributes and optional fact schemas.
-- **Ingestion** — agent reports (agent audience) and agentless facts from `forge-provisioner` (internal).
+- **Ingestion** — agent reports (agent audience) and agentless facts from `rackmarshal-provisioner` (internal).
 - **History** — revisions of declared data and of facts, with retention.
-- **Change stream** — ordered endpoint events for `forge-provisioner`.
+- **Change stream** — ordered endpoint events for `rackmarshal-provisioner`.
 
 ### Interfaces
 
@@ -72,7 +72,7 @@ that proves the full request loop ([Sequencing](0001-project-repositories.md#seq
   names that do not collide with built-ins. A class's `attributeSchema` and optional `factSchema` are
   JSON Schema 2020-12, matching the dialect of 0002. Removing a class that endpoints still use is refused.
 - **Labels** follow the Kubernetes syntax: an optional DNS-subdomain prefix, then a name of 63 characters
-  or fewer. The `forge.servercurio.com/` prefix is reserved. Selectors support `=`, `!=`, `in`, `notin`,
+  or fewer. The `rackmarshal.servercurio.com/` prefix is reserved. Selectors support `=`, `!=`, `in`, `notin`,
   and key existence.
 - **Capabilities** — the class declares them. An agent reports the capabilities it actually has, based on
   installed plugins, as the fact `capabilities.observed`.
@@ -101,7 +101,7 @@ sub-resource so lists stay small.
 #### API sketch
 
 All paths are `/inventory/v1alpha1/...`. The tenant comes from the verified principal, as proposed in 0002
-and [0008](0008-forge-gateway.md), never from the path.
+and [0008](0008-rackmarshal-gateway.md), never from the path.
 
 | Method and path                                  | Audience             | Notes                                     |
 |--------------------------------------------------|----------------------|-------------------------------------------|
@@ -111,21 +111,21 @@ and [0008](0008-forge-gateway.md), never from the path.
 | `PATCH /endpoints/{endpointId}`                  | operator             | JSON Merge Patch; `If-Match` required     |
 | `DELETE /endpoints/{endpointId}`                 | operator             | sets `retired`; purged after retention    |
 | `GET /endpoints/{endpointId}/facts`              | operator, internal   | current facts                             |
-| `PUT /endpoints/{endpointId}/facts`              | internal             | agentless facts from `forge-provisioner`  |
+| `PUT /endpoints/{endpointId}/facts`              | internal             | agentless facts from `rackmarshal-provisioner`  |
 | `GET /endpoints/{endpointId}/revisions`          | operator             | `kind=declared` or `kind=facts`           |
 | `GET`, `POST /endpoint-classes`                  | operator             | built-ins are listed but read-only        |
 | `GET`, `PUT`, `DELETE /endpoint-classes/{name}`  | operator             | `PUT` for tenant classes only             |
 | `GET /relationships`, `POST /relationships`      | operator, internal   | filter by `endpointId`, `type`            |
 | `DELETE /relationships/{relationshipId}`         | operator             |                                           |
-| `POST /agent-reports`                            | agent                | `x-forge-idempotent: true`                |
+| `POST /agent-reports`                            | agent                | `x-rackmarshal-idempotent: true`                |
 | `GET /endpoint-events`                           | internal             | `cursor`, `limit`, `waitSeconds` ≤ 30     |
 
 ```yaml
   /inventory/v1alpha1/agent-reports:
     post:
       operationId: createAgentReport
-      x-forge-audience: [agent]
-      x-forge-idempotent: true
+      x-rackmarshal-audience: [agent]
+      x-rackmarshal-idempotent: true
       security: [{ mutualTLS: [] }]
       requestBody:
         required: true
@@ -150,8 +150,8 @@ the code `resource_version_conflict`.
 #### Agent report ingestion
 
 ```
-forge-agent ──mTLS 1.3──► forge-gateway (agent ingress)
-            ──mTLS + X-Forge-Principal {agent, tenantId}──► forge-inventory
+rackmarshal-agent ──mTLS 1.3──► rackmarshal-gateway (agent ingress)
+            ──mTLS + X-Rackmarshal-Principal {agent, tenantId}──► rackmarshal-inventory
                                                              POST /inventory/v1alpha1/agent-reports
 ```
 
@@ -161,11 +161,11 @@ forge-agent ──mTLS 1.3──► forge-gateway (agent ingress)
 2. **Binding** — inventory finds the endpoint bound to the agent ID. On first contact it auto-registers
    one: the class comes from the reported OS family through `autoRegistration.classByOsFamily`, the name
    from the reported hostname (a numeric suffix resolves collisions), and the labels from the enrollment
-   token's host labels, read from `forge-identity` through an `internal` operation that 0006 defines.
+   token's host labels, read from `rackmarshal-identity` through an `internal` operation that 0006 defines.
 3. **Unchanged facts** — if `previousDigest` equals the digest the server issued last time, `facts` may
    be omitted. The report then only updates `factsReportedAt`. The digest is an opaque server value, so
    agents need no canonical JSON.
-4. **Validation** — core facts are checked against the `AgentReport` schema from `forge-api-schema`, and
+4. **Validation** — core facts are checked against the `AgentReport` schema from `rackmarshal-api-schema`, and
    `facts.plugins.<name>` against the class's `factSchema` where one is defined. Limits: 8 MiB
    decompressed per report, 256 KiB per plugin, nesting depth 32.
 5. **Write** — one transaction: lock the endpoint row, ignore a `sequence` that is not newer (a replayed
@@ -174,9 +174,9 @@ forge-agent ──mTLS 1.3──► forge-gateway (agent ingress)
 6. **Receipt** — `202 { endpointId, factsDigest, nextReportAfter }`. The server sets the report cadence
    (default 5 minutes, with jitter), which spreads load across the fleet.
 
-#### Relationship to `forge-provisioner`
+#### Relationship to `rackmarshal-provisioner`
 
-- **Reads** — `forge-provisioner` selects endpoints with `labelSelector` through `internal` list and get
+- **Reads** — `rackmarshal-provisioner` selects endpoints with `labelSelector` through `internal` list and get
   operations, called service to service over mutual TLS, never through the gateway.
 - **Watches** — it long-polls `GET /endpoint-events` with a durable cursor. Events are
   `endpoint.created`, `endpoint.declared-updated`, `endpoint.facts-updated`, `endpoint.retired`, and
@@ -185,13 +185,13 @@ forge-agent ──mTLS 1.3──► forge-gateway (agent ingress)
 - **Writes** — for agentless devices only, it `PUT`s facts it discovered through device APIs, with its
   own principal as the revision actor.
 - **Authority** — inventory stores no desired state and makes no reconciliation decisions.
-  `forge-provisioner` compares its directives with declared attributes and facts. Internal callers name
-  the tenant with `X-Forge-Tenant-Id`, which is honored only from SPIFFE IDs in `internalCallers`.
+  `rackmarshal-provisioner` compares its directives with declared attributes and facts. Internal callers name
+  the tenant with `X-Rackmarshal-Tenant-Id`, which is honored only from SPIFFE IDs in `internalCallers`.
 
 ### Dependencies
 
-- **Forge** — `forge-api-schema` (models, embedded document, `AgentReport` schema), `forge-sdk` (`spiffe`,
-  `tlsconfig`, `revocation`, `enroll`, `principal`, and the identity client), `forge-common`.
+- **Rackmarshal** — `rackmarshal-api-schema` (models, embedded document, `AgentReport` schema), `rackmarshal-sdk` (`spiffe`,
+  `tlsconfig`, `revocation`, `enroll`, `principal`, and the identity client), `rackmarshal-common`.
 - **Kept from the starter** — Echo v5.3.1; `jackc/pgx/v5` v5.11.0; `pressly/goose/v3` v3.28.0, which adds
   `mfridman/interpolate`, `sethvargo/go-retry`, `go.uber.org/multierr`, and `golang.org/x/sync`.
 - **New** — `santhosh-tekuri/jsonschema/v6` v6.0.3, already pinned in CONVENTIONS, for class schemas.
@@ -200,7 +200,7 @@ forge-agent ──mTLS 1.3──► forge-gateway (agent ingress)
   `jinzhu/inflection`, `puzpuzpuz/xsync/v3`, `tmthrgd/go-hex`, `vmihailenco/msgpack/v5`,
   `vmihailenco/tagparser/v2`), and the queries here (JSONB containment, `FOR UPDATE`, `SET LOCAL`) are
   plain SQL anyway. Goose keeps running through `pgx/v5/stdlib`.
-- **Measured footprint** — with bun, the proposed set plus `forge-common`'s OpenTelemetry stack links 40
+- **Measured footprint** — with bun, the proposed set plus `rackmarshal-common`'s OpenTelemetry stack links 40
   third-party modules (123 in `go list -m all`). Without bun, subtracting its 7 gives about 33, not
   separately measured.
 
@@ -265,7 +265,7 @@ CREATE TABLE endpoint_events (
 ALTER TABLE endpoints ENABLE ROW LEVEL SECURITY;
 ALTER TABLE endpoints FORCE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation ON endpoints
-  USING (tenant_id = current_setting('forge.tenant_id', true));
+  USING (tenant_id = current_setting('rackmarshal.tenant_id', true));
 -- same ENABLE/FORCE/POLICY for revisions and relationships; classes also allow tenant_id IS NULL on read
 
 -- +goose Down
@@ -283,13 +283,13 @@ DROP TABLE endpoint_events, endpoint_relationships, endpoint_revisions, endpoint
 ### Security
 
 - **Tenant isolation, twice.** Every query runs in a transaction that begins
-  `SELECT set_config('forge.tenant_id', $1, true)` from the principal. Row-level security then filters
+  `SELECT set_config('rackmarshal.tenant_id', $1, true)` from the principal. Row-level security then filters
   rows even if a query forgets its `WHERE`. `FORCE ROW LEVEL SECURITY` applies the policy to the table
   owner too. The runtime role owns no tables and lacks `BYPASSRLS`; goose runs as a separate migration
   role.
-- **Principal trust.** `X-Forge-Principal` is accepted only from
-  `spiffe://<environment-id>/service/forge-gateway`, and `X-Forge-Tenant-Id` only from `internalCallers`
-  (default `forge-provisioner`). Agents can act only on their own endpoint.
+- **Principal trust.** `X-Rackmarshal-Principal` is accepted only from
+  `spiffe://<environment-id>/service/rackmarshal-gateway`, and `X-Rackmarshal-Tenant-Id` only from `internalCallers`
+  (default `rackmarshal-provisioner`). Agents can act only on their own endpoint.
 - **Schema safety.** Tenant-supplied JSON Schemas compile with remote `$ref` loading disabled, and are
   capped at 64 KiB and depth 32. Whether jsonschema v6's default loader fetches over the network is
   unverified; the service installs an explicit loader with no network access regardless.
@@ -297,7 +297,7 @@ DROP TABLE endpoint_events, endpoint_relationships, endpoint_revisions, endpoint
   and only their size and digest appear in traces.
 - **Database transport.** `sslmode=verify-full` against the environment CA bundle. A plaintext database
   connection is the last-resort feature `plaintext-database`.
-- **Service identity.** Mutual TLS 1.3 on the service listener, with `forge-sdk` `tlsconfig.Server` and
+- **Service identity.** Mutual TLS 1.3 on the service listener, with `rackmarshal-sdk` `tlsconfig.Server` and
   revocation checks.
 
 ### Environment awareness
@@ -307,33 +307,33 @@ DROP TABLE endpoint_events, endpoint_relationships, endpoint_revisions, endpoint
   `sslmode=verify-full`. `AllowLastResort("plaintext-database")` refuses in `production` unless
   overridden.
 - **Migrations** — `database.autoMigrate` defaults to true only in `development` and `test`. Hardened tiers
-  run `forge-inventory migrate` as a separate, logged deployment step ([0005](0005-forge-infrastructure.md)).
+  run `rackmarshal-inventory migrate` as a separate, logged deployment step ([0005](0005-rackmarshal-infrastructure.md)).
 
 ### Logging & telemetry
 
-- **Fields** — `forge.tenant.id`, `forge.endpoint.id`, `forge.agent.id`, `forge.report.bytes`, and
-  `forge.report.unchanged`; never label values, attributes, or facts.
-- **Metrics** — `forge.inventory.reports` (by result), `forge.inventory.report.size` (histogram),
-  `forge.inventory.endpoints` (gauge by lifecycle, without a tenant dimension), and
-  `forge.inventory.events.lag`.
+- **Fields** — `rackmarshal.tenant.id`, `rackmarshal.endpoint.id`, `rackmarshal.agent.id`, `rackmarshal.report.bytes`, and
+  `rackmarshal.report.unchanged`; never label values, attributes, or facts.
+- **Metrics** — `rackmarshal.inventory.reports` (by result), `rackmarshal.inventory.report.size` (histogram),
+  `rackmarshal.inventory.endpoints` (gauge by lifecycle, without a tenant dimension), and
+  `rackmarshal.inventory.events.lag`.
 - **Spans** — database spans carry the statement name, never parameters.
 
 ### Configuration
 
-Prefix `FORGE_INVENTORY_`. Starter server, logging, environment, and telemetry keys are omitted.
+Prefix `RACKMARSHAL_INVENTORY_`. Starter server, logging, environment, and telemetry keys are omitted.
 
 | YAML                                | Variable                                         | Default               |
 |-------------------------------------|--------------------------------------------------|-----------------------|
-| `database.dsnFile`                  | `FORGE_INVENTORY_DATABASE_DSN_FILE`              | required              |
-| `database.migrationDsnFile`         | `FORGE_INVENTORY_DATABASE_MIGRATION_DSN_FILE`    | required to migrate   |
-| `database.autoMigrate`              | `FORGE_INVENTORY_DATABASE_AUTO_MIGRATE`          | by tier               |
-| `reports.maxBytes`                  | `FORGE_INVENTORY_REPORTS_MAX_BYTES`              | `8MiB`                |
-| `reports.interval`                  | `FORGE_INVENTORY_REPORTS_INTERVAL`               | `5m`                  |
-| `autoRegistration.enabled`          | `FORGE_INVENTORY_AUTO_REGISTRATION_ENABLED`      | `true`                |
-| `history.factsRetention`            | `FORGE_INVENTORY_HISTORY_FACTS_RETENTION`        | `2160h`               |
-| `history.declaredRetention`         | `FORGE_INVENTORY_HISTORY_DECLARED_RETENTION`     | `9600h`               |
-| `events.retention`                  | `FORGE_INVENTORY_EVENTS_RETENTION`               | `168h`                |
-| `internalCallers`                   | `FORGE_INVENTORY_INTERNAL_CALLERS`               | `forge-provisioner`   |
+| `database.dsnFile`                  | `RACKMARSHAL_INVENTORY_DATABASE_DSN_FILE`              | required              |
+| `database.migrationDsnFile`         | `RACKMARSHAL_INVENTORY_DATABASE_MIGRATION_DSN_FILE`    | required to migrate   |
+| `database.autoMigrate`              | `RACKMARSHAL_INVENTORY_DATABASE_AUTO_MIGRATE`          | by tier               |
+| `reports.maxBytes`                  | `RACKMARSHAL_INVENTORY_REPORTS_MAX_BYTES`              | `8MiB`                |
+| `reports.interval`                  | `RACKMARSHAL_INVENTORY_REPORTS_INTERVAL`               | `5m`                  |
+| `autoRegistration.enabled`          | `RACKMARSHAL_INVENTORY_AUTO_REGISTRATION_ENABLED`      | `true`                |
+| `history.factsRetention`            | `RACKMARSHAL_INVENTORY_HISTORY_FACTS_RETENTION`        | `2160h`               |
+| `history.declaredRetention`         | `RACKMARSHAL_INVENTORY_HISTORY_DECLARED_RETENTION`     | `9600h`               |
+| `events.retention`                  | `RACKMARSHAL_INVENTORY_EVENTS_RETENTION`               | `168h`                |
+| `internalCallers`                   | `RACKMARSHAL_INVENTORY_INTERNAL_CALLERS`               | `rackmarshal-provisioner`   |
 
 The DSN comes from a file, per [CONVENTIONS.md](CONVENTIONS.md), which replaces the starter's inline
 `database.dsn`.
@@ -341,7 +341,7 @@ The DSN comes from a file, per [CONVENTIONS.md](CONVENTIONS.md), which replaces 
 ### Build, release & versioning
 
 - **Bootstrap** from `go-echo-starter`: swap bun for `pgxpool`, remove swaggo, and keep goose and the
-  embedded migrations. The binary is `cmd/forge-inventory`, with `serve` and `migrate` subcommands.
+  embedded migrations. The binary is `cmd/rackmarshal-inventory`, with `serve` and `migrate` subcommands.
 - **Migrations** are forward-only in hardened tiers. Every `Down` is tested, but rollback happens by
   restoring a backup.
 - **Versioning** — `v0.x`. The API follows the stages in 0002, and a schema change that breaks a stored
@@ -374,20 +374,20 @@ The DSN comes from a file, per [CONVENTIONS.md](CONVENTIONS.md), which replaces 
   lets agents skip uploads without a server round trip, but every agent and plugin must canonicalize
   identically.
 - **Storing reconciliation status** on endpoints — a single view for operators, but it blurs the single
-  desired-state authority that 0001 assigns to `forge-provisioner`.
+  desired-state authority that 0001 assigns to `rackmarshal-provisioner`.
 
 ## Open questions
 
 - **Pre-registration** — should operators be able to claim an agent onto a declared endpoint, e.g. an
-  enrollment token that names an `endpointId` ([0006](0006-forge-identity.md))?
+  enrollment token that names an `endpointId` ([0006](0006-rackmarshal-identity.md))?
 - **Retirement** — should retiring an agent-managed endpoint revoke the agent's certificate automatically?
-- **Agentless credentials** — where do device API credentials live: `forge-provisioner`, an external
-  secret manager, or `forge-identity`?
-- **Compliance view** — where do operators see reconciliation status ([0011](0011-forge-provisioner.md))?
+- **Agentless credentials** — where do device API credentials live: `rackmarshal-provisioner`, an external
+  secret manager, or `rackmarshal-identity`?
+- **Compliance view** — where do operators see reconciliation status ([0011](0011-rackmarshal-provisioner.md))?
 - **Cross-tenant operators** — can an environment administrator query across tenants, and how does that
   interact with row-level security?
-- **PostgreSQL floor** — 16 is proposed; which versions will [0005](0005-forge-infrastructure.md) operate?
-- **Fact scrubbing** — who strips secrets that plugins might report, the agent ([0012](0012-forge-agent.md))
+- **PostgreSQL floor** — 16 is proposed; which versions will [0005](0005-rackmarshal-infrastructure.md) operate?
+- **Fact scrubbing** — who strips secrets that plugins might report, the agent ([0012](0012-rackmarshal-agent.md))
   or inventory?
 - **Retention defaults** — are 90 days of facts history and 400 days of declared history right?
 
@@ -395,8 +395,8 @@ The DSN comes from a file, per [CONVENTIONS.md](CONVENTIONS.md), which replaces 
 
 - [0001 — Project Repositories](0001-project-repositories.md) — inventory role, desired-state model,
   agent enrollment, environment identity.
-- [0002 — forge-api-schema](0002-forge-api-schema.md), [0003 — forge-sdk](0003-forge-sdk.md),
-  [0004 — forge-common](0004-forge-common.md), [0008 — forge-gateway](0008-forge-gateway.md),
+- [0002 — rackmarshal-api-schema](0002-rackmarshal-api-schema.md), [0003 — rackmarshal-sdk](0003-rackmarshal-sdk.md),
+  [0004 — rackmarshal-common](0004-rackmarshal-common.md), [0008 — rackmarshal-gateway](0008-rackmarshal-gateway.md),
   [CONVENTIONS.md](CONVENTIONS.md).
 - [go-echo-starter](https://github.com/servercurio/go-echo-starter) — `internal/database` (pgx stdlib, bun,
   goose embedded migrations) and `go.mod`.

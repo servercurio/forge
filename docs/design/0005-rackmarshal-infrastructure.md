@@ -2,12 +2,12 @@
   ~ SPDX-License-Identifier: Apache-2.0
 -->
 
-# 0005 — forge-infrastructure
+# 0005 — rackmarshal-infrastructure
 
 - **Status:** Draft
 - **Owner:** Nathan Klick
 - **Date:** 2026-09-15
-- **Summary:** `forge-infrastructure` is an Ansible project that deploys Forge's own services to three
+- **Summary:** `rackmarshal-infrastructure` is an Ansible project that deploys Rackmarshal's own services to three
   target types from one inventory per environment: Kubernetes (each service's Helm chart), containers
   (Podman Quadlet or Docker Compose), and the operating system directly (signed deb and rpm packages
   under systemd, or NSIS-installed Windows services). Conftest checks inventories and all rendered Helm,
@@ -21,18 +21,18 @@
 
 ## Context & goals
 
-0001 makes this repository Forge's *own* deployment: Ansible playbooks, roles, and inventories gated
+0001 makes this repository Rackmarshal's *own* deployment: Ansible playbooks, roles, and inventories gated
 by OPA policies, with Conftest in pull-request CI and a control node that runs merged playbooks so
 deployment credentials never live in CI
-([Forge's own infrastructure](0001-project-repositories.md#forges-own-infrastructure)). It must not
-depend on `forge-agent` or `forge-provisioner`. Each inventory supplies its environment's name, tier,
+([Rackmarshal's own infrastructure](0001-project-repositories.md#rackmarshals-own-infrastructure)). It must not
+depend on `rackmarshal-agent` or `rackmarshal-provisioner`. Each inventory supplies its environment's name, tier,
 ID, and CA bundle, and the control node holds a root-signed certificate
 ([Environment identity](0001-project-repositories.md#environment-identity)).
 
 Kubernetes support is mandatory, beside containers and direct installs on a compatible OS, all through
 this one pipeline. Certificate bootstrap depends on the target: the control node delivers single-use
 tokens to containers and hosts, while pods enroll with projected service account tokens that
-`forge-identity` verifies offline. Service repositories ship the artifacts in
+`rackmarshal-identity` verifies offline. Service repositories ship the artifacts in
 [CONVENTIONS — Deployment artifacts](CONVENTIONS.md#deployment-artifacts).
 
 **Goals**
@@ -46,8 +46,8 @@ tokens to containers and hosts, while pods enroll with projected service account
 
 **Non-goals**
 
-- Managing customer endpoints — that is `forge-provisioner` and `forge-agent`.
-- Certificate issuance, token formats, and token verification — [0006](0006-forge-identity.md).
+- Managing customer endpoints — that is `rackmarshal-provisioner` and `rackmarshal-agent`.
+- Certificate issuance, token formats, and token verification — [0006](0006-rackmarshal-identity.md).
 - Building images, charts, packages, and Windows installers — each service repository, per CONVENTIONS.
 - Creating clusters, installing operating systems, and choosing a telemetry backend; this repository
   starts from a reachable namespace or host and deploys only an in-environment OTLP collector.
@@ -56,7 +56,7 @@ tokens to containers and hosts, while pods enroll with projected service account
 
 ### Responsibilities
 
-- Inventories, roles, and playbooks for every Forge service, PostgreSQL, and the OTLP collector.
+- Inventories, roles, and playbooks for every Rackmarshal service, PostgreSQL, and the OTLP collector.
 - Quadlet and Compose definitions, which live here rather than in service repositories.
 - Rego policies for inventories, Ansible content, and rendered output, with their unit tests.
 - The control node's configuration and run procedure, and runbooks for the key ceremony, cluster
@@ -82,7 +82,7 @@ Kubernetes follows the upstream window of three minors, 1.35–1.37 today
 #### Repository layout
 
 ```
-forge-infrastructure/
+rackmarshal-infrastructure/
 ├── ansible.cfg  requirements.yml  execution-environment.yml
 ├── inventories/<env>/                # hosts.yaml; group_vars/all/ with the four files below
 ├── roles/
@@ -103,24 +103,24 @@ forge-infrastructure/
 `tier`, `id` (26-character base32 from the ceremony), `caBundle` (public roots only; two during root
 rotation), and `overrides`. `secrets.yaml` holds secret-manager references only. `artifacts.yaml` is
 described below, and `deployment.yaml` selects targets. Services may differ — for example
-`forge-gateway` as a package on edge hosts and the rest in a cluster:
+`rackmarshal-gateway` as a package on edge hosts and the rest in a cluster:
 
 ```yaml
 forge_deployment:
   defaultTarget: kubernetes          # kubernetes | podman | docker | package | windows
   services:
-    forge-gateway: { target: package, hosts: gateway }
+    rackmarshal-gateway: { target: package, hosts: gateway }
   clusters:
     - id: east-1                     # lowercase DNS label
-      namespace: forge-qa-east
+      namespace: rackmarshal-qa-east
       issuer: https://oidc.east-1.example.net
       jwks: files/qa-east/clusters/east-1.jwks.json      # pinned; fingerprint in the ceremony record
-      kubeconfig: vault:kv/forge/qa-east/clusters/east-1  # secret-manager reference
+      kubeconfig: vault:kv/rackmarshal/qa-east/clusters/east-1  # secret-manager reference
 ```
 
-`forge_identity` renders `clusters` into `forge-identity`'s cluster issuer registry
-([0006](0006-forge-identity.md)), mapping service account `<namespace>/forge-<name>` to
-`spiffe://<environment-id>/service/forge-<name>`.
+`forge_identity` renders `clusters` into `rackmarshal-identity`'s cluster issuer registry
+([0006](0006-rackmarshal-identity.md)), mapping service account `<namespace>/rackmarshal-<name>` to
+`spiffe://<environment-id>/service/rackmarshal-<name>`.
 
 #### Consuming service artifacts
 
@@ -166,7 +166,7 @@ Checked on 2026-09-15 from GitHub releases and the [Galaxy API](https://galaxy.a
 `kubernetes.core` 6.4.0 and 6.5.0 add Helm v4 support and map `atomic` to `--rollback-on-failure`
 ([changelog](https://github.com/ansible-collections/kubernetes.core/blob/main/CHANGELOG.rst)). Service
 repositories use [nFPM](https://github.com/goreleaser/nfpm/releases) v2.47.0 and
-[NSIS](https://nsis.sourceforge.io) v3. Collections and Helm are baked into the
+[NSIS](https://nsis.sourcerackmarshal.io) v3. Collections and Helm are baked into the
 execution environment image, pinned by digest; Dependabot does not cover Galaxy (unverified), so a
 100-series workflow proposes bumps.
 
@@ -181,14 +181,14 @@ on role and playbook YAML; the rest run on rendered output. Initial rule set (pr
 | inventory  | `name` DNS label, `tier` one of four, `id` 26 base32 characters; one ID per inventory      |
 | inventory  | every service resolves to a known target; `kubernetes` services name a listed cluster      |
 | inventory  | cluster `jwks` fingerprints match the environment's ceremony record                        |
-| inventory  | `forge-identity` and PostgreSQL never bind public interfaces or public load balancers     |
+| inventory  | `rackmarshal-identity` and PostgreSQL never bind public interfaces or public load balancers     |
 | inventory  | images pinned by `@sha256:`; charts, packages, installers by SHA-256; `schemaVersion` never drops |
 | inventory  | `production`: no `kek-sealed` or other last-resort feature without an override            |
 | inventory  | service token TTL ≤ 1h; service certificates exactly 7 days; secrets are references only  |
 | content    | secret-using tasks set `no_log`; `shell` has `changed_when`; no `validate_certs: false`     |
 | kubernetes | all containers non-root, read-only root, no escalation, drop `ALL`, `RuntimeDefault` seccomp |
 | kubernetes | no host namespaces or `hostPath`; `NetworkPolicy` present; no Role, RoleBinding, or Secret |
-| kubernetes | `automountServiceAccountToken: false`; one projected token, audience `spiffe://<id>/service/forge-identity`, 600 s, init container only |
+| kubernetes | `automountServiceAccountToken: false`; one projected token, audience `spiffe://<id>/service/rackmarshal-identity`, 600 s, init container only |
 | kubernetes | key volume is `emptyDir` `medium: Memory`; init and main containers use the same digest     |
 | compose    | non-root `user`, `read_only`, `cap_drop: [ALL]`, `no-new-privileges`, no host network      |
 | quadlet    | non-root `User=`, `ReadOnly=true`, `NoNewPrivileges=true`, `DropCapability=all`, no `AutoUpdate=` |
@@ -203,11 +203,11 @@ on role and playbook YAML; the rest run on rendered output. Initial rule set (pr
   **`300-flow-main-branch-checks.yaml`** repeats them on `main`, plus every target test.
 - **Control node** — proposed as a dedicated, hardened VM per environment tier group that runs
   `ansible-navigator` in the pinned execution environment. A systemd timer fetches `main`, runs
-  `git verify-commit` against an allowlist of maintainers' GPG keys (every Forge repository requires
+  `git verify-commit` against an allowlist of maintainers' GPG keys (every Rackmarshal repository requires
   GPG-signed commits, per [Naming & conventions](0001-project-repositories.md#naming--conventions)),
   renders and re-runs Conftest locally, and only then runs `site.yaml` in check mode, followed by apply
   for inventories whose `autoApply` is true. `production` applies require a manual
-  `forge-deploy apply <env> <commit>` on the node.
+  `rackmarshal-deploy apply <env> <commit>` on the node.
 
 #### Upgrade and rollback
 
@@ -226,8 +226,8 @@ across a `schemaVersion` change. Otherwise rollback is a reverted commit applied
 
 ### Dependencies
 
-- **Forge repositories** — each service's deployment artifacts (CONVENTIONS); enrollment, renewal,
-  and the cluster issuer registry from [0006](0006-forge-identity.md). No Go modules.
+- **Rackmarshal repositories** — each service's deployment artifacts (CONVENTIONS); enrollment, renewal,
+  and the cluster issuer registry from [0006](0006-rackmarshal-identity.md). No Go modules.
 - **Runtime** — a Kubernetes namespace, Podman, Docker Engine with Compose, systemd, or Windows Server;
   PostgreSQL from distribution packages or a managed service; an OpenTelemetry Collector pinned by digest.
 - **Secret manager** — one per environment, reached only from the control node (proposed: HashiCorp
@@ -253,12 +253,12 @@ Performed by two people on an offline, freshly imaged workstation, with a writte
    the trust domain. Go matches URI name constraints against the URI host
    ([`constraints.go`](https://github.com/golang/go/blob/master/src/crypto/x509/constraints.go)),
    which for a SPIFFE ID is the environment ID.
-3. **Sign `forge-identity`'s intermediate** from a CSR whose key was generated inside the environment's
-   HSM or KMS ([0006](0006-forge-identity.md)): path length 0, same name constraint, 2-year validity,
+3. **Sign `rackmarshal-identity`'s intermediate** from a CSR whose key was generated inside the environment's
+   HSM or KMS ([0006](0006-rackmarshal-identity.md)): path length 0, same name constraint, 2-year validity,
    renewed by a repeat ceremony at two-thirds of its lifetime.
 4. **Sign the control node's bootstrap certificate** from a CSR generated on the control node:
    `spiffe://<environment-id>/control-node/<node-name>`, client authentication only, 30 days. After
-   `forge-identity` is running, the control node renews through 0006's renewal endpoint like a service.
+   `rackmarshal-identity` is running, the control node renews through 0006's renewal endpoint like a service.
 5. **Register Kubernetes cluster issuers** — for each listed cluster, one person exports the issuer URL
    and the JWKS from `/openid/v1/jwks`
    ([issuer discovery](https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/#service-account-issuer-discovery))
@@ -273,21 +273,21 @@ use the KEK-sealed intermediate store, gated as in 0006.
 
 #### Service certificate bootstrap
 
-`forge-identity` issues its own service certificate from the intermediate on every target (0001). Every
-other service enrolls with a CSR through `forge-sdk` `pkg/enroll` ([0003](0003-forge-sdk.md)), keeps an
+`rackmarshal-identity` issues its own service certificate from the intermediate on every target (0001). Every
+other service enrolls with a CSR through `rackmarshal-sdk` `pkg/enroll` ([0003](0003-rackmarshal-sdk.md)), keeps an
 ECDSA P-256 key, and renews at two-thirds of its 7-day lifetime with the same OCSP and CRL checks.
 
 **Containers and operating systems** (`podman`, `docker`, `package`, `windows`):
 
 1. If the instance's certificate has less than a third of its lifetime left, or none exists, the control
-   node calls `forge-identity` over mutual TLS with its control-node certificate for a service enrollment
+   node calls `rackmarshal-identity` over mutual TLS with its control-node certificate for a service enrollment
    token for `service/<repository>` and this host, TTL 15 minutes.
 2. The token is written with `no_log: true` and read through `certificate.enrollmentTokenFile`: a Podman
    secret (`Secret=`); a file on the host's `/run` tmpfs mounted as a Compose secret
    ([Compose secrets](https://docs.docker.com/compose/how-tos/use-secrets/)); `LoadCredential=`, which
    systemd keeps in non-swappable memory
    ([systemd.exec](https://www.freedesktop.org/software/systemd/man/latest/systemd.exec.html)); or on
-   Windows a file under `%ProgramData%\forge-<name>\` ACL'd to the service account.
+   Windows a file under `%ProgramData%\rackmarshal-<name>\` ACL'd to the service account.
 3. The key stays in a `0600` (or ACL'd) file in the state directory, so restarts need no new token. When
    `/readyz` passes, the role removes the token; an unused token expires on its own.
 
@@ -295,12 +295,12 @@ ECDSA P-256 key, and renews at two-thirds of its 7-day lifetime with the same OC
 
 1. Each service has its own ServiceAccount, and pods set `automountServiceAccountToken: false`; services
    never call the Kubernetes API.
-2. A projected `serviceAccountToken` with audience `spiffe://<environment-id>/service/forge-identity` and
+2. A projected `serviceAccountToken` with audience `spiffe://<environment-id>/service/rackmarshal-identity` and
    `expirationSeconds: 600`, the minimum
    ([projected volumes](https://kubernetes.io/docs/concepts/storage/projected-volumes/)), mounts only into
    an enrollment init container that runs the service's own image as non-root with a read-only root.
-3. The init container verifies `forge-identity` against `environment.caBundle` and its SPIFFE ID, then
-   sends a CSR with the token from `certificate.serviceAccountTokenFile`. `forge-identity` verifies it
+3. The init container verifies `rackmarshal-identity` against `environment.caBundle` and its SPIFFE ID, then
+   sends a CSR with the token from `certificate.serviceAccountTokenFile`. `rackmarshal-identity` verifies it
    offline against the registered issuer and JWKS, checks audience and maximum age, allows one enrollment
    per token ID, and enrolls only the service account mapped to that service (0006).
 4. Key and certificate go to an `emptyDir` with `medium: Memory`, a tmpfs shared with the main container
@@ -308,7 +308,7 @@ ECDSA P-256 key, and renews at two-thirds of its 7-day lifetime with the same OC
    deleted pod takes its key with it; its replacement enrolls again.
 5. The token is never logged, copied, or exposed as a variable. The namespace enforces the `restricted`
    [Pod Security Standard](https://kubernetes.io/docs/concepts/security/pod-security-standards/), and
-   only cluster administrators may create tokens for Forge service accounts.
+   only cluster administrators may create tokens for Rackmarshal service accounts.
 
 #### Least privilege and secrets
 
@@ -340,7 +340,7 @@ ECDSA P-256 key, and renews at two-thirds of its 7-day lifetime with the same OC
 ### Logging & telemetry
 
 Ansible runs use the JSON callback, written to the control node's journal with
-`deployment.environment.name`, `forge.environment.tier`, and `forge.environment.id`. Each run records the
+`deployment.environment.name`, `rackmarshal.environment.tier`, and `rackmarshal.environment.id`. Each run records the
 commit, playbook, targets, artifact versions, and a changed-task summary. Deployed collectors receive
 OTLP/HTTP from services and forward to the environment's backend.
 
@@ -348,7 +348,7 @@ OTLP/HTTP from services and forward to the environment's backend.
 
 Ansible variables use the `forge_` prefix in snake_case. Rendered service configuration uses CONVENTIONS
 YAML keys and `...File` references, identical on every target except file paths. There is no
-`FORGE_INFRASTRUCTURE_` prefix because nothing here is a Go executable.
+`RACKMARSHAL_INFRASTRUCTURE_` prefix because nothing here is a Go executable.
 
 ### Build, release & versioning
 
@@ -361,7 +361,7 @@ commit. Tags `vX.Y.Z` mark execution environment image releases, built with ansi
 - **Policy** — `opa test` with passing and failing fixtures for every rule, and golden rendered output
   per target for a reference inventory.
 - **Kubernetes** — kind v0.33.0 (`kindest/node:v1.37.0`) in pull-request CI: install every chart, enroll
-  against a SoftHSM-backed `forge-identity`, reschedule pods, and reject replayed, wrong-audience, and
+  against a SoftHSM-backed `rackmarshal-identity`, reschedule pods, and reject replayed, wrong-audience, and
   other-service tokens. Nightly: k3s on `ubuntu-24.04-arm` and kind 1.35 and 1.36 node images
   ([kind v0.33.0](https://github.com/kubernetes-sigs/kind/releases/tag/v0.33.0)).
 - **Hosts** — Molecule scenarios for `podman`, `docker`, and `package` in systemd-capable containers per
@@ -378,7 +378,7 @@ commit. Tags `vX.Y.Z` mark execution environment image releases, built with ansi
 - **Podman Quadlet only** (previous draft) — simpler, but Kubernetes is now mandatory.
 - **Control-node token delivery on Kubernetes** — one enrollment path, but scaled or rescheduled pods
   would wait for an Ansible run.
-- **`TokenReview` from `forge-identity`** — sees deleted pods, but needs credentials and a network path
+- **`TokenReview` from `rackmarshal-identity`** — sees deleted pods, but needs credentials and a network path
   to every cluster API server, and enrollment fails when one is down.
 - **SPIRE Kubernetes attestation** — mature, but 0001 uses SPIFFE IDs without running SPIRE.
 - **Quadlet and Compose in service repositories** — closer to the code, but outside this CI's gate.
@@ -393,10 +393,10 @@ commit. Tags `vX.Y.Z` mark execution environment image releases, built with ansi
 ## Open questions
 
 - **Collector and PostgreSQL identity** — neither fits the CONVENTIONS SPIFFE paths. Proposed: a
-  separate per-environment infrastructure CA held by the secret manager, never trusted for Forge mutual
+  separate per-environment infrastructure CA held by the secret manager, never trusted for Rackmarshal mutual
   TLS (see also 0004). Is PostgreSQL for Kubernetes targets managed or host-based only (proposed)?
 - **Enrollment keys** — should `certificate.dir`, `enrollmentTokenFile`, and `serviceAccountTokenFile`
-  ([0008](0008-forge-gateway.md)) become CONVENTIONS keys for every service?
+  ([0008](0008-rackmarshal-gateway.md)) become CONVENTIONS keys for every service?
 - **Managed clusters** — do providers rotate signing keys often enough that pinned JWKS is impractical
   and 0006's discovery mode becomes the norm (unverified)?
 - **Pod deletion** — offline verification cannot see a deleted pod, whose certificate stays valid for up
@@ -410,8 +410,8 @@ commit. Tags `vX.Y.Z` mark execution environment image releases, built with ansi
 
 ## References
 
-- [0001](0001-project-repositories.md), [0003](0003-forge-sdk.md), [0004](0004-forge-common.md),
-  [0006](0006-forge-identity.md), [0008](0008-forge-gateway.md), [0009](0009-forge-inventory.md),
+- [0001](0001-project-repositories.md), [0003](0003-rackmarshal-sdk.md), [0004](0004-rackmarshal-common.md),
+  [0006](0006-rackmarshal-identity.md), [0008](0008-rackmarshal-gateway.md), [0009](0009-rackmarshal-inventory.md),
   [CONVENTIONS.md](CONVENTIONS.md); versions from the release pages under Pinned toolchain.
 - Ansible [docs](https://docs.ansible.com/) and
   [Windows SSH](https://docs.ansible.com/ansible/latest/os_guide/windows_ssh.html);
@@ -428,7 +428,7 @@ commit. Tags `vX.Y.Z` mark execution environment image releases, built with ansi
   [Compose secrets](https://docs.docker.com/compose/how-tos/use-secrets/),
   [Docker security](https://docs.docker.com/engine/security/),
   [systemd.exec](https://www.freedesktop.org/software/systemd/man/latest/systemd.exec.html).
-- [nFPM](https://nfpm.goreleaser.com), [NSIS](https://nsis.sourceforge.io) (zlib/libpng licensed),
+- [nFPM](https://nfpm.goreleaser.com), [NSIS](https://nsis.sourcerackmarshal.io) (zlib/libpng licensed),
   [`ansible.windows.win_package`](https://docs.ansible.com/ansible/latest/collections/ansible/windows/win_package_module.html),
   [runner images](https://github.com/actions/runner-images), [endoflife.date](https://endoflife.date).
 - [Go `crypto/x509` constraints](https://github.com/golang/go/blob/master/src/crypto/x509/constraints.go)

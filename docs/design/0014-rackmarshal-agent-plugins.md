@@ -2,17 +2,17 @@
   ~ SPDX-License-Identifier: Apache-2.0
 -->
 
-# 0014 — forge-agent-plugins
+# 0014 — rackmarshal-agent-plugins
 
 - **Status:** Draft
 - **Owner:** Nathan Klick
 - **Date:** 2026-09-15
-- **Summary:** `forge-agent-plugins` is one Go module that builds five first-party plugin executables —
+- **Summary:** `rackmarshal-agent-plugins` is one Go module that builds five first-party plugin executables —
   the Sigstore validator, system facts, packages, files, and services — released together on one
   version. Each binary ships with a SHA-256, a keyless cosign bundle signed from GitHub Actions, and a
-  CycloneDX SBOM, so `forge-provisioner` can verify each release and `forge-agent` can pin and install
+  CycloneDX SBOM, so `rackmarshal-provisioner` can verify each release and `rackmarshal-agent` can pin and install
   exactly the plugin versions its desired state names. The core plugins, `sigstore` and `sysfacts`, are
-  also core-signed with a KMS- or HSM-held key and bundled in every `forge-agent` package.
+  also core-signed with a KMS- or HSM-held key and bundled in every `rackmarshal-agent` package.
 
 > An initial draft with concrete proposals, bounded by the
 > [Resolved decisions](0001-project-repositories.md#resolved-decisions) in 0001. Conventions other
@@ -20,14 +20,14 @@
 
 ## Context & goals
 
-0001 lists `forge-agent-plugins` as the first-party plugin executables, built on
-`forge-agent-plugin-sdk` and seeded from `go-cli-starter`
-([Repository inventory](0001-project-repositories.md#repository-inventory)). `forge-provisioner`
+0001 lists `rackmarshal-agent-plugins` as the first-party plugin executables, built on
+`rackmarshal-agent-plugin-sdk` and seeded from `go-cli-starter`
+([Repository inventory](0001-project-repositories.md#repository-inventory)). `rackmarshal-provisioner`
 verifies each plugin release's Sigstore signature against trusted publisher identities, the core
 `sigstore` validator verifies it again on the host, and the agent pins its SHA-256 before every launch;
 core plugins are trusted through keys embedded in the agent
 ([Agent plugin ecosystem](0001-project-repositories.md#agent-plugin-ecosystem)). The contract,
-grants, and environment check come from [0013](0013-forge-agent-plugin-sdk.md).
+grants, and environment check come from [0013](0013-rackmarshal-agent-plugin-sdk.md).
 
 **Goals**
 
@@ -41,10 +41,10 @@ grants, and environment check come from [0013](0013-forge-agent-plugin-sdk.md).
 
 **Non-goals**
 
-- Import verification — [0011](0011-forge-provisioner.md); installation, core-signature checks, and
-  sandboxing — [0012](0012-forge-agent.md). The contract — 0013.
-- Third-party plugins — [0015](0015-forge-plugin-starter.md). Agentless devices —
-  [0011](0011-forge-provisioner.md).
+- Import verification — [0011](0011-rackmarshal-provisioner.md); installation, core-signature checks, and
+  sandboxing — [0012](0012-rackmarshal-agent.md). The contract — 0013.
+- Third-party plugins — [0015](0015-rackmarshal-plugin-starter.md). Agentless devices —
+  [0011](0011-rackmarshal-provisioner.md).
 - Templating or scripting on hosts; Tengo runs in the agent and provisioner (0001).
 
 ## Proposal
@@ -53,7 +53,7 @@ grants, and environment check come from [0013](0013-forge-agent-plugin-sdk.md).
 
 - Source, tests, manifests, and releases for the first-party plugins.
 - Per-plugin build matrices, SBOMs, signatures, and a signed release index.
-- Core signing of `sigstore` and `sysfacts`, and the core artifacts `forge-agent` packages.
+- Core signing of `sigstore` and `sysfacts`, and the core artifacts `rackmarshal-agent` packages.
 - A compatibility statement across plugin releases, SDK versions, and protocol versions.
 
 ### Interfaces
@@ -63,8 +63,8 @@ grants, and environment check come from [0013](0013-forge-agent-plugin-sdk.md).
 Proposed: **one Go module with one `cmd/` directory per plugin.**
 
 ```
-forge-agent-plugins/
-├── cmd/forge-plugin-{sigstore,sysfacts,packages,files,services}/main.go   # serve.Main wiring only
+rackmarshal-agent-plugins/
+├── cmd/rackmarshal-plugin-{sigstore,sysfacts,packages,files,services}/main.go   # serve.Main wiring only
 ├── internal/
 │   ├── sigstore/  sysfacts/  packages/  files/  services/   # one tree per plugin; no imports between
 │   ├── execx/                           # exec: absolute paths, no shell, clean env, caps
@@ -72,7 +72,7 @@ forge-agent-plugins/
 │   └── version/
 ├── manifests/<name>.yaml                # embedded in each binary; published per release
 ├── deps/<name>.allow                    # linked-module allowlist per binary
-├── keys/core-plugins.pem                # core-plugin public keys (current and next), as in forge-agent
+├── keys/core-plugins.pem                # core-plugin public keys (current and next), as in rackmarshal-agent
 ├── tools/coresign/                      # DSSE core statements; standard library only
 ├── plugins.yaml                         # per-plugin platforms and core flag, read by Taskfile and CI
 ├── e2e/                                 # nested module: container-based resource tests
@@ -93,11 +93,11 @@ forge-agent-plugins/
   only imported packages, so a dependency added for `sysfacts` stays out of `packages`.
 - **Isolation** — a golangci-lint `depguard` rule forbids imports between plugin trees and keeps
   sigstore-go out of every tree but `internal/sigstore`. `deps/<name>.allow` is checked against
-  `go list -deps -f '{{with .Module}}{{.Path}}{{end}}' ./cmd/forge-plugin-<name>`.
+  `go list -deps -f '{{with .Module}}{{.Path}}{{end}}' ./cmd/rackmarshal-plugin-<name>`.
 
 #### Initial plugin set
 
-| Plugin     | Core | Capability                                | Kinds (`forge.servercurio.com/v1alpha1`) | Privileges                            |
+| Plugin     | Core | Capability                                | Kinds (`rackmarshal.servercurio.com/v1alpha1`) | Privileges                            |
 |------------|------|-------------------------------------------|------------------------------------------|---------------------------------------|
 | `sigstore` | yes  | `verifier:sigstore`                       | —                                        | unprivileged; TUF egress in `refresh` |
 | `sysfacts` | yes  | `facts`                                   | —                                        | unprivileged                          |
@@ -139,21 +139,21 @@ forge-agent-plugins/
 - **Deferred** — users and groups, firewall, scheduled jobs, containers, Windows services, and non-Linux
   facts. Each needs its own privilege review.
 
-The kinds' schemas and Go types live in `forge-api-schema` (`desiredstatev1alpha1`, 0002), which has no
+The kinds' schemas and Go types live in `rackmarshal-api-schema` (`desiredstatev1alpha1`, 0002), which has no
 dependencies.
 
 ### Dependencies
 
-- **Forge** — `forge-agent-plugin-sdk`, `forge-common` (`logging`, `environment`), and
-  `forge-api-schema`.
+- **Rackmarshal** — `rackmarshal-agent-plugin-sdk`, `rackmarshal-common` (`logging`, `environment`), and
+  `rackmarshal-api-schema`.
 - **Third party** — for every plugin except `sigstore`, only the SDK's 14 measured modules (0013) plus
-  zerolog through `forge-common`: about 16 per binary. That is an estimate until the Forge modules exist;
+  zerolog through `rackmarshal-common`: about 16 per binary. That is an estimate until the Rackmarshal modules exist;
   `deps/*.allow` records the actual list.
-- **`forge-plugin-sigstore`** — go-plugin v1.8.0 with sigstore-go v1.3.0 `pkg/verify` and `pkg/tuf`
+- **`rackmarshal-plugin-sigstore`** — go-plugin v1.8.0 with sigstore-go v1.3.0 `pkg/verify` and `pkg/tuf`
   links **79** modules, 65 beyond go-plugin; `go list -m all` reports 372, and the stripped binary is
   17 MiB. Measured 2026-09-15 with Go 1.27.1 (`linux/amd64`, `CGO_ENABLED=0`,
   `-trimpath -ldflags "-s -w"`, modules `go version -m` lists as compiled in;
-  [0012](0012-forge-agent.md#sigstore-verifier-measurements)). `deps/sigstore.allow` records the 79.
+  [0012](0012-rackmarshal-agent.md#sigstore-verifier-measurements)). `deps/sigstore.allow` records the 79.
   Because the module is shared, sigstore-go's requirements join every plugin's version selection, even
   though the other binaries do not link them.
 - **Measured, not chosen** — `shirou/gopsutil/v4` v4.26.8 (BSD) adds 3 linked modules per OS:
@@ -185,7 +185,7 @@ Plugins keep no state. Installed binaries on hosts belong to 0012.
   in the release job. `CODEOWNERS` on `.github/workflows/`, since whoever changes the signing workflow
   controls what the identity signs. `govulncheck` and CodeQL.
 - **Identity scope** — Fulcio puts the signing workflow's `job_workflow_ref` in the certificate SAN.
-  That is the reusable 800 workflow in this repository, so the identity names `forge-agent-plugins`.
+  That is the reusable 800 workflow in this repository, so the identity names `rackmarshal-agent-plugins`.
 - **Core-plugin key** — ECDSA P-256 in an HSM or cloud KMS. Only the release job's identity, federated
   from GitHub OIDC with no stored credentials, may sign with it, only on protected refs, and only after
   `task verify` passes; the KMS or HSM audit log records every use. Key IDs and digests are logged,
@@ -193,27 +193,27 @@ Plugins keep no state. Installed binaries on hosts belong to 0012.
 
 ### Environment awareness
 
-Plugins require `environment` configuration and perform 0013's check. Tier logic uses `forge-common`.
+Plugins require `environment` configuration and perform 0013's check. Tier logic uses `rackmarshal-common`.
 For example, `packages` makes installing from unauthenticated repositories the last-resort feature
 `unauthenticated-packages`, which `production` refuses unless overridden.
 
 ### Logging & telemetry
 
-JSON logs go to stderr and the agent re-emits them (0013). Fields: `forge.resource.kind`,
-`forge.resource.name`, `forge.resource.changed`. Commands are logged by executable and argument count
+JSON logs go to stderr and the agent re-emits them (0013). Fields: `rackmarshal.resource.kind`,
+`rackmarshal.resource.name`, `rackmarshal.resource.changed`. Commands are logged by executable and argument count
 only, since arguments can carry resource data. No telemetry export.
 
 ### Configuration
 
-Prefixes are `FORGE_PLUGIN_SIGSTORE`, `_SYSFACTS`, `_PACKAGES`, `_FILES`, and `_SERVICES`, with the
-SDK's `environment` and `rpc` keys and `forge-common`'s `logging`. Grants carry paths, executables, and
+Prefixes are `RACKMARSHAL_PLUGIN_SIGSTORE`, `_SYSFACTS`, `_PACKAGES`, `_FILES`, and `_SERVICES`, with the
+SDK's `environment` and `rpc` keys and `rackmarshal-common`'s `logging`. Grants carry paths, executables, and
 network destinations, so plugin keys stay few:
 
 | YAML          | Variable                             | Default                          |
 |---------------|--------------------------------------|----------------------------------|
-| `manager`     | `FORGE_PLUGIN_PACKAGES_MANAGER`      | `auto` (`apt` or `dnf` by probe) |
-| `lockTimeout` | `FORGE_PLUGIN_PACKAGES_LOCK_TIMEOUT` | `5m`                             |
-| `collectors`  | `FORGE_PLUGIN_SYSFACTS_COLLECTORS`   | all                              |
+| `manager`     | `RACKMARSHAL_PLUGIN_PACKAGES_MANAGER`      | `auto` (`apt` or `dnf` by probe) |
+| `lockTimeout` | `RACKMARSHAL_PLUGIN_PACKAGES_LOCK_TIMEOUT` | `5m`                             |
+| `collectors`  | `RACKMARSHAL_PLUGIN_SYSFACTS_COLLECTORS`   | all                              |
 
 ### Build, release & versioning
 
@@ -238,7 +238,7 @@ Every release rebuilds every plugin, and commit scopes such as `feat(packages): 
 
 #### Assets, signing, and SBOMs
 
-Per plugin and platform, with `<asset>` = `forge-plugin-<name>-<os>-<arch>`:
+Per plugin and platform, with `<asset>` = `rackmarshal-plugin-<name>-<os>-<arch>`:
 
 | Asset                                        | Purpose                                                  |
 |----------------------------------------------|----------------------------------------------------------|
@@ -246,7 +246,7 @@ Per plugin and platform, with `<asset>` = `forge-plugin-<name>-<os>-<arch>`:
 | `<asset>.sigstore.json`                      | cosign bundle: signature, certificate, Rekor proof       |
 | `<asset>.core.dsse.json` (core plugins only) | DSSE core statement signed with the core-plugin key      |
 | `<asset>.cdx.json` + bundle                  | CycloneDX SBOM with licenses                             |
-| `forge-plugin-<name>.manifest.yaml` + bundle | capabilities, privileges, protocol versions              |
+| `rackmarshal-plugin-<name>.manifest.yaml` + bundle | capabilities, privileges, protocol versions              |
 | `plugins-index.json` + bundle                | name, version, platform, SHA-256, protocols, SDK version |
 
 `.releaserc.json` keeps the starter's analyzer rules, with a `publishCmd` of
@@ -254,7 +254,7 @@ Per plugin and platform, with `<asset>` = `forge-plugin-<name>-<os>-<arch>`:
 The release job installs cosign first. `task sign` and `task verify` run:
 
 ```sh
-repo=servercurio/forge-agent-plugins
+repo=servercurio/rackmarshal-agent-plugins
 wf=.github/workflows/800-call-semantic-release.yaml
 cosign sign-blob --yes --bundle "bin/${f}.sigstore.json" "bin/${f}"
 cosign verify-blob "bin/${f}" --bundle "bin/${f}.sigstore.json" \
@@ -263,12 +263,12 @@ cosign verify-blob "bin/${f}" --bundle "bin/${f}.sigstore.json" \
 ```
 
 - **Keyless** — GitHub OIDC (`https://token.actions.githubusercontent.com`) through Fulcio, so there
-  are no long-lived keys. The bundle carries the Rekor inclusion proof, so `forge-provisioner` and the
+  are no long-lived keys. The bundle carries the Rekor inclusion proof, so `rackmarshal-provisioner` and the
   host validator can verify offline with a `trusted_root.json`; cosign v3.1.3 deprecates `--offline` in
   favor of `--bundle` plus `--trusted-root`. Every plugin, core or not, still gets a keyless bundle.
 - **`task verify`** fails the release if the identity drifts, for example after a workflow rename, or if
   a core envelope does not verify against `keys/core-plugins.pem`.
-- **SBOMs** — `cyclonedx-gomod app -licenses -main cmd/forge-plugin-<name>` per plugin and platform,
+- **SBOMs** — `cyclonedx-gomod app -licenses -main cmd/rackmarshal-plugin-<name>` per plugin and platform,
   since each binary links a different package set. Whether it honors `GOOS`/`GOARCH` is unverified, so a
   test compares its components with `go version -m <asset>`. `-licenses` surfaces the MPL-2.0 go-plugin
   and yamux modules.
@@ -283,7 +283,7 @@ cosign verify-blob "bin/${f}" --bundle "bin/${f}.sigstore.json" \
 1. **Statement** — `tools/coresign` writes the payload
    `{"name":"sigstore","version":"0.4.0","platform":"linux/amd64","sha256":"…","protocolVersions":[1]}`
    and its [DSSE](https://github.com/secure-systems-lab/dsse/blob/master/protocol.md) pre-authentication
-   encoding for payload type `application/vnd.forge.core-plugin.v1+json`.
+   encoding for payload type `application/vnd.rackmarshal.core-plugin.v1+json`.
 2. **Sign** — proposed: the cloud KMS CLI signs those bytes with the P-256 key, with short-lived
    credentials from GitHub OIDC: `aws kms sign --message-type RAW --signing-algorithm ECDSA_SHA_256`,
    which returns a DER signature ([AWS CLI](https://docs.aws.amazon.com/cli/latest/reference/kms/sign.html)),
@@ -297,33 +297,33 @@ Whether GitHub-hosted runner images include both CLIs is unverified. The signer 
 
 #### How the agent installs trusted versions
 
-Proposed for [0011](0011-forge-provisioner.md) and [0012](0012-forge-agent.md), with the kinds in 0002:
+Proposed for [0011](0011-rackmarshal-provisioner.md) and [0012](0012-rackmarshal-agent.md), with the kinds in 0002:
 
 ```yaml
-apiVersion: forge.servercurio.com/v1alpha1
+apiVersion: rackmarshal.servercurio.com/v1alpha1
 kind: PluginPublisher
 metadata: { name: servercurio }
 spec:
   keyless:
     issuer: https://token.actions.githubusercontent.com
-    repository: servercurio/forge-agent-plugins
+    repository: servercurio/rackmarshal-agent-plugins
     workflow: .github/workflows/800-call-semantic-release.yaml
     refs: [refs/heads/main, "refs/heads/release/*"]
 ---
-apiVersion: forge.servercurio.com/v1alpha1
+apiVersion: rackmarshal.servercurio.com/v1alpha1
 kind: AgentPlugin
 metadata: { name: packages }
 spec:
   publisher: servercurio
   version: 0.4.0
-  baseURL: https://github.com/servercurio/forge-agent-plugins/releases/download/v0.4.0
+  baseURL: https://github.com/servercurio/rackmarshal-agent-plugins/releases/download/v0.4.0
   sha256: { linux/amd64: "…", linux/arm64: "…" }
-  grant: { capabilities: [resource:forge.servercurio.com/v1alpha1/Package] }
+  grant: { capabilities: [resource:rackmarshal.servercurio.com/v1alpha1/Package] }
 ```
 
-1. **Import** — `forge-provisioner` verifies `plugins-index.json`, the manifest, and every listed
+1. **Import** — `rackmarshal-provisioner` verifies `plugins-index.json`, the manifest, and every listed
    asset's `.sigstore.json` against the publisher with sigstore-go, and writes the verified digests into
-   `AgentPlugin` ([0011](0011-forge-provisioner.md)). Nothing auto-updates to "latest". The publisher
+   `AgentPlugin` ([0011](0011-rackmarshal-provisioner.md)). Nothing auto-updates to "latest". The publisher
    identity is built from structured fields, never a free-form regular expression. Bundle pins carry
    that identity.
 2. **Download** — the agent fetches `<asset>` and `<asset>.sigstore.json` from `baseURL`. That may be a
@@ -331,14 +331,14 @@ spec:
 3. **Verify** — the agent checks the SHA-256 against the pin in its provisioner-signed bundle, and the
    core `sigstore` validator verifies `<asset>.sigstore.json` against the pin's publisher identity with a
    TUF-verified trusted root. The agent binary still links no verifier
-   ([0012](0012-forge-agent.md#sigstore-verifier-measurements)).
+   ([0012](0012-rackmarshal-agent.md#sigstore-verifier-measurements)).
 4. **Compatibility** — the manifest's `protocolVersions` must overlap the agent's.
-5. **Install** — atomically into the root-owned `…/plugins/<name>/forge-plugin-<name>`, with its digest
-   written beside it as `forge-plugin-<name>.sha256` (0012). One binary per plugin: rolling back means
+5. **Install** — atomically into the root-owned `…/plugins/<name>/rackmarshal-plugin-<name>`, with its digest
+   written beside it as `rackmarshal-plugin-<name>.sha256` (0012). One binary per plugin: rolling back means
    pinning the older version in the bundle, which re-downloads and re-verifies it. Every launch pins
    the digest through `SecureConfig`.
 
-Core plugins take a different path: `forge-agent`'s packaging consumes `sigstore` and `sysfacts` from a
+Core plugins take a different path: `rackmarshal-agent`'s packaging consumes `sigstore` and `sysfacts` from a
 release pinned by version and per-platform SHA-256, verifying the core envelopes and cosign bundles
 before building (0012). A newer core release can reach hosts through a bundle pin with its
 `<asset>.core.dsse.json`.
@@ -371,7 +371,7 @@ current, and when the SDK drops a protocol, plugins keep serving N-1 until the a
 
 - **Module per plugin** (`go.work`) — four Dependabot streams and possible gRPC skew, with no consumer
   benefit.
-- **Repository per plugin** — contradicts 0001's single `forge-agent-plugins` repository.
+- **Repository per plugin** — contradicts 0001's single `rackmarshal-agent-plugins` repository.
 - **Per-plugin versions with semantic-release-monorepo** — misses dependency fixes made at the root.
 - **One multi-call binary** — every plugin would link every dependency and share one digest, and fact
   collection would run from the root binary.
@@ -391,7 +391,7 @@ current, and when the SDK drops a protocol, plugins keep serving N-1 until the a
   while bundles next to assets let the provisioner verify releases imported from mirrors.
 - **gopsutil** (measured above) and **go-systemd over D-Bus** (adds `godbus`; not measured).
 - **Deviation from [CONVENTIONS.md](CONVENTIONS.md)** (*Go modules and layout*: binaries take the repo
-  name) — binaries are named `forge-plugin-<name>`, which maps to `FORGE_PLUGIN_<NAME>`.
+  name) — binaries are named `rackmarshal-plugin-<name>`, which maps to `RACKMARSHAL_PLUGIN_<NAME>`.
 
 ## Open questions
 
@@ -400,18 +400,18 @@ current, and when the SDK drops a protocol, plugins keep serving N-1 until the a
   extended facts?
 - **GPG** — keep GPG hash signatures beside cosign bundles for manual verification?
 - **Index** — is `plugins-index.json` defined here, or as a kind in 0002?
-- **Kinds** — the kind names and the `forge.servercurio.com/v1alpha1` group, to confirm with 0002 and
+- **Kinds** — the kind names and the `rackmarshal.servercurio.com/v1alpha1` group, to confirm with 0002 and
   0011.
 - **Growth** — at what plugin count, if any, do per-plugin versions pay for their tooling?
 - **Core signer** — a cloud KMS CLI with `tools/coresign` (proposed), cosign with a KMS URI, or PKCS#11
-  for an HSM (cgo, as in [0006](0006-forge-identity.md))? Which KMS, and who creates and holds the next
+  for an HSM (cgo, as in [0006](0006-rackmarshal-identity.md))? Which KMS, and who creates and holds the next
   key?
 
 ## References
 
 - [0001](0001-project-repositories.md), [CONVENTIONS.md](CONVENTIONS.md),
-  [0002](0002-forge-api-schema.md), [0004](0004-forge-common.md), [0006](0006-forge-identity.md),
-  [0012](0012-forge-agent.md), [0013](0013-forge-agent-plugin-sdk.md).
+  [0002](0002-rackmarshal-api-schema.md), [0004](0004-rackmarshal-common.md), [0006](0006-rackmarshal-identity.md),
+  [0012](0012-rackmarshal-agent.md), [0013](0013-rackmarshal-agent-plugin-sdk.md).
 - [go-cli-starter](https://github.com/servercurio/go-cli-starter) — `Taskfile.yaml` (six targets, `hash`,
   `sign`, `sbom`), `.releaserc.json`, `800-call-semantic-release.yaml` (`id-token: write`, attest steps).
 - Cosign — [signing blobs](https://docs.sigstore.dev/cosign/signing/signing_with_blobs/),
