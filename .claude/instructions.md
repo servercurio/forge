@@ -41,6 +41,12 @@ Don't introduce application code, services, or a database.
   one. Absent an explicit request, the user reviews and creates them. When the user does request
   the action, the agent may proceed and shall still follow every other rule in this section (no AI
   attribution, GPG + DCO sign-off on commits, etc.).
+- The agent shall not merge a pull request unless the user explicitly approves that specific pull
+  request. Opening it is where the agent stops: report the number, the check results, and what it
+  contains, then wait. Approval to merge one pull request never carries to the next, however similar
+  the change or however recent the earlier approval, and describing a merge afterwards is not a
+  substitute for asking before it. The agent shall not pass `--admin` to `gh pr merge`, which is what
+  allows a pull request still marked `REVIEW_REQUIRED` to merge unreviewed.
 - The agent is not an author of the content, only the user. Even when creating a commit on the
   user's behalf, attribution remains with the user.
 - The agent shall never add origin or attribution information (such as "Created by Claude",
