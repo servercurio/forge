@@ -178,6 +178,9 @@
   .modal-actions { display: flex; gap: var(--space-3); justify-content: flex-end; }
   .field { display: flex; flex-direction: column; gap: 6px; }
   .field label { font-size: var(--text-xs); font-weight: 600; }
+  .row-actions { display: flex; gap: var(--space-2); justify-content: flex-end; }
+  .link-btn { font: inherit; font-size: var(--text-xs); background: none; border: 0; color: var(--action); cursor: pointer; padding: 2px 4px; border-radius: var(--radius-sm); }
+  .link-btn:hover { background: var(--surface-sunken); }
   .warnbox { border-left: 3px solid var(--critical); background: var(--critical-fill); color: var(--critical); padding: var(--space-3) var(--space-4); border-radius: 0 var(--radius-md) var(--radius-md) 0; font-size: var(--text-xs); }
 
   .proto-bar {
@@ -252,18 +255,56 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="15" r="4"/><path d="m10.8 12.2 6.2-6.2 3 3-2 2-2-2"/></svg>
         PKI &amp; keys
       </button>
-      <button class="nav-item" data-go="audit">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21a9 9 0 1 1 9-9"/><circle cx="12" cy="12" r="2.5"/></svg>
-        Audit &amp; anchors
+      <button class="nav-item" data-go="certificates">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M7 20h10"/></svg>
+        Certificates
+      </button>
+      <button class="nav-item" data-go="revocation">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m5.6 5.6 12.8 12.8"/></svg>
+        Revocation
+      </button>
+      <button class="nav-item" data-go="corekey">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="7" cy="17" r="3"/><path d="M9.5 14.5 20 4"/><path d="m17 7 2 2"/></svg>
+        Core key
+      </button>
+      <span class="nav-label">Plugins</span>
+      <button class="nav-item" data-go="publishers">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 4 6v6c0 4.5 3.4 8.2 8 9 4.6-.8 8-4.5 8-9V6z"/></svg>
+        Publishers
+      </button>
+      <button class="nav-item" data-go="imports">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="4" width="9" height="16" rx="2"/><rect x="15" y="9" width="7" height="6" rx="1.5"/><path d="M11 12h4"/></svg>
+        Imports
       </button>
       <span class="nav-label">Tenancy</span>
-      <button class="nav-item" data-go="stub">
+      <button class="nav-item" data-go="tenants">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 21V7l7-4v18"/><path d="M10 21h11V11l-11-4"/></svg>
         Tenants
       </button>
-      <button class="nav-item" data-go="stub">
+      <button class="nav-item" data-go="users">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/></svg>
+        Users
+      </button>
+      <button class="nav-item" data-go="federation">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18"/></svg>
+        Federation
+      </button>
+      <button class="nav-item" data-go="agents">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="11" width="12" height="9" rx="2"/><circle cx="17.5" cy="8" r="1.1" fill="currentColor" stroke="none"/><circle cx="20.5" cy="4.5" r="1.7" fill="currentColor" stroke="none"/></svg>
         Agents
+      </button>
+      <button class="nav-item" data-go="enrollment">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="7" cy="12" r="1.6"/></svg>
+        Enrollment
+      </button>
+      <span class="nav-label">Audit</span>
+      <button class="nav-item" data-go="audit">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h16v16H4z"/><path d="M8 9h8M8 13h5"/></svg>
+        Event chain
+      </button>
+      <button class="nav-item" data-go="anchors">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21a9 9 0 1 1 9-9"/><circle cx="12" cy="12" r="2.5"/></svg>
+        Anchors <span class="count hot">2</span>
       </button>
     </nav>
   </aside>
@@ -334,7 +375,7 @@
           <h3>Audit anchoring has gaps</h3>
           <span class="pill s-crit"><span class="dot"></span>critical</span>
           <div class="spacer"></div>
-          <button class="btn btn-secondary" type="button" data-go="audit">Inspect anchors</button>
+          <button class="btn btn-secondary" type="button" data-go="anchors">Inspect anchors</button>
         </div>
         <div class="panel-body">
           <p style="font-size:var(--text-xs)">
@@ -543,6 +584,34 @@
       </div>
 
       <div class="panel">
+        <div class="panel-head"><h3>Recent events</h3></div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Seq</th><th>Time</th><th>Actor</th><th>Action</th><th>Outcome</th></tr></thead>
+            <tbody>
+              <tr><td class="mono">84 127</td><td class="mono">09:27:10Z</td><td>Marcus Bell</td><td class="mono">service_enrollment.request</td><td><span class="pill s-ok"><span class="dot"></span>ok</span></td></tr>
+              <tr><td class="mono">84 126</td><td class="mono">09:18:44Z</td><td>Priya Ramanathan</td><td class="mono">service_enrollment.request</td><td><span class="pill s-ok"><span class="dot"></span>ok</span></td></tr>
+              <tr><td class="mono">84 125</td><td class="mono">08:52:01Z</td><td>Priya Ramanathan</td><td class="mono">enrollment_token.create</td><td><span class="pill s-ok"><span class="dot"></span>ok</span></td></tr>
+              <tr><td class="mono">84 124</td><td class="mono">08:44:19Z</td><td class="mono">svc/rackmarshal-gateway</td><td class="mono">certificate.renew</td><td><span class="pill s-ok"><span class="dot"></span>ok</span></td></tr>
+              <tr><td class="mono">84 123</td><td class="mono">08:31:55Z</td><td>Marcus Bell</td><td class="mono">agent.revoke</td><td><span class="pill s-ok"><span class="dot"></span>ok</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+
+    <!-- ---------------- ANCHORS ---------------- -->
+    <div class="content" id="screen-anchors" hidden>
+      <div class="page-head">
+        <div>
+          <h1>Audit anchors</h1>
+          <p>Whether the chain head is still reaching append-only storage outside the database.</p>
+        </div>
+        <div class="spacer"></div>
+        <button class="btn btn-secondary" type="button" data-go="audit">Event chain</button>
+      </div>
+      <div class="panel">
         <div class="panel-head">
           <h3>Anchor history</h3>
           <span class="pill s-crit"><span class="dot"></span>2 missed</span>
@@ -587,17 +656,379 @@
         </div>
       </div>
 
+    </div>
+
+    <!-- ---------------- TENANTS ---------------- -->
+    <div class="content" id="screen-tenants" hidden>
+      <div class="page-head">
+        <div>
+          <h1>Tenants</h1>
+          <p>Seven tenants in <strong>prod-east</strong>. Suspending a tenant stops new applies without deleting state.</p>
+        </div>
+        <div class="spacer"></div>
+        <button class="btn btn-primary" type="button" data-form="tenant">Create tenant</button>
+      </div>
       <div class="panel">
-        <div class="panel-head"><h3>Recent events</h3></div>
+        <div class="table-wrap">
+          <table id="tenant-table">
+            <thead><tr><th>Tenant</th><th>ID</th><th>Endpoints</th><th>Members</th><th>State</th></tr></thead>
+            <tbody>
+              <tr class="clickable" data-go="tenant"><td>northwind</td><td class="mono">tn-4a91c3</td><td class="mono">6</td><td class="mono">4</td><td><span class="pill s-ok"><span class="dot"></span>active</span></td></tr>
+              <tr class="clickable" data-go="tenant"><td>eastbrook</td><td class="mono">tn-7d22f8</td><td class="mono">31</td><td class="mono">9</td><td><span class="pill s-ok"><span class="dot"></span>active</span></td></tr>
+              <tr class="clickable" data-go="tenant"><td>halcyon</td><td class="mono">tn-1f05b6</td><td class="mono">12</td><td class="mono">3</td><td><span class="pill s-ok"><span class="dot"></span>active</span></td></tr>
+              <tr class="clickable" data-go="tenant"><td>meridian</td><td class="mono">tn-9c48e1</td><td class="mono">58</td><td class="mono">14</td><td><span class="pill s-ok"><span class="dot"></span>active</span></td></tr>
+              <tr class="clickable" data-go="tenant"><td>quarry</td><td class="mono">tn-2b73a0</td><td class="mono">4</td><td class="mono">2</td><td><span class="pill s-warn"><span class="dot"></span>suspended</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ---------------- TENANT DETAIL ---------------- -->
+    <div class="content" id="screen-tenant" hidden>
+      <div class="page-head">
+        <div>
+          <h1>northwind</h1>
+          <p>Tenant <span class="mono">tn-4a91c3</span> &middot; created 2026-04-02</p>
+        </div>
+        <div class="spacer"></div>
+        <button class="btn btn-critical" type="button" data-confirm="Suspend the tenant northwind">Suspend</button>
+      </div>
+      <div class="two-col">
+        <div class="panel">
+          <div class="panel-head"><h3>Quotas</h3></div>
+          <div class="panel-body">
+            <dl class="kv">
+              <dt>Endpoints</dt><dd>6 of 50</dd>
+              <dt>Agents</dt><dd>5 of 50</dd>
+              <dt>Enrollment tokens / day</dt><dd>3 of 25</dd>
+              <dt>API tokens</dt><dd>4 of 20</dd>
+              <dt>Directive documents</dt><dd>6 of 200</dd>
+            </dl>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h3>Federation</h3></div>
+          <div class="panel-body">
+            <dl class="kv">
+              <dt>Provider</dt><dd>Okta (OIDC)</dd>
+              <dt>Issuer</dt><dd>https://northwind.okta.com</dd>
+              <dt>Claim mapping</dt><dd>groups &rarr; roles</dd>
+              <dt>Local accounts</dt><dd>break-glass only</dd>
+            </dl>
+          </div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h3>Members</h3></div>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Seq</th><th>Time</th><th>Actor</th><th>Action</th><th>Outcome</th></tr></thead>
+            <thead><tr><th>Member</th><th>Role</th><th>Sign-in</th><th>Last active</th></tr></thead>
             <tbody>
-              <tr><td class="mono">84 127</td><td class="mono">09:27:10Z</td><td>Marcus Bell</td><td class="mono">service_enrollment.request</td><td><span class="pill s-ok"><span class="dot"></span>ok</span></td></tr>
-              <tr><td class="mono">84 126</td><td class="mono">09:18:44Z</td><td>Priya Ramanathan</td><td class="mono">service_enrollment.request</td><td><span class="pill s-ok"><span class="dot"></span>ok</span></td></tr>
-              <tr><td class="mono">84 125</td><td class="mono">08:52:01Z</td><td>Priya Ramanathan</td><td class="mono">enrollment_token.create</td><td><span class="pill s-ok"><span class="dot"></span>ok</span></td></tr>
-              <tr><td class="mono">84 124</td><td class="mono">08:44:19Z</td><td class="mono">svc/rackmarshal-gateway</td><td class="mono">certificate.renew</td><td><span class="pill s-ok"><span class="dot"></span>ok</span></td></tr>
-              <tr><td class="mono">84 123</td><td class="mono">08:31:55Z</td><td>Marcus Bell</td><td class="mono">agent.revoke</td><td><span class="pill s-ok"><span class="dot"></span>ok</span></td></tr>
+              <tr><td>Dana Okafor</td><td class="mono">tenant-admin</td><td class="mono muted">Okta</td><td class="mono">now</td></tr>
+              <tr><td>Marcus Bell</td><td class="mono">member</td><td class="mono muted">Okta</td><td class="mono">1h ago</td></tr>
+              <tr><td>Ines Duarte</td><td class="mono">member</td><td class="mono muted">Okta</td><td class="mono">3d ago</td></tr>
+              <tr><td>ci-runner</td><td class="mono">service</td><td class="mono muted">API token</td><td class="mono">12m ago</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ---------------- USERS ---------------- -->
+    <div class="content" id="screen-users" hidden>
+      <div class="page-head">
+        <div>
+          <h1>Platform users</h1>
+          <p>Administrators of the deployment itself, distinct from tenant members.</p>
+        </div>
+        <div class="spacer"></div>
+        <button class="btn btn-primary" type="button" data-stepup-form="user">Add user</button>
+      </div>
+      <div class="stepup">
+        Local accounts exist for break-glass only. 0018 records as an open question whether the console
+        should refuse to authenticate them at all, forcing break-glass through <span class="mono">rackmarshal-cli</span>.
+      </div>
+      <div class="panel" style="margin-top:var(--space-4)">
+        <div class="table-wrap">
+          <table id="user-table">
+            <thead><tr><th>User</th><th>Roles</th><th>Sign-in</th><th>Second factor</th><th>Last sign-in</th></tr></thead>
+            <tbody>
+              <tr><td>Priya Ramanathan<span class="mono muted" style="display:block;font-size:var(--text-xs)">priya.r@servercurio.com</span></td><td class="mono">platform-admin</td><td class="mono muted">Okta</td><td><span class="pill s-ok"><span class="dot"></span>WebAuthn</span></td><td class="mono">23m ago</td></tr>
+              <tr><td>Marcus Bell<span class="mono muted" style="display:block;font-size:var(--text-xs)">marcus.bell@servercurio.com</span></td><td class="mono">platform-admin</td><td class="mono muted">Okta</td><td><span class="pill s-ok"><span class="dot"></span>WebAuthn</span></td><td class="mono">2h ago</td></tr>
+              <tr><td>Jo Ferreira<span class="mono muted" style="display:block;font-size:var(--text-xs)">jo.ferreira@servercurio.com</span></td><td class="mono">auditor</td><td class="mono muted">Okta</td><td><span class="pill s-ok"><span class="dot"></span>WebAuthn</span></td><td class="mono">1d ago</td></tr>
+              <tr><td>break-glass<span class="mono muted" style="display:block;font-size:var(--text-xs)">local account</span></td><td class="mono">platform-admin</td><td class="mono muted">local</td><td><span class="pill s-warn"><span class="dot"></span>TOTP</span></td><td class="mono">never</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ---------------- FEDERATION ---------------- -->
+    <div class="content" id="screen-federation" hidden>
+      <div class="page-head">
+        <div>
+          <h1>Federation</h1>
+          <p>External identity providers, configured per tenant. Every path resolves to a <span class="mono">rackmarshal-identity</span> principal.</p>
+        </div>
+        <div class="spacer"></div>
+        <button class="btn btn-primary" type="button" data-stepup-form="federation">Add provider</button>
+      </div>
+      <div class="stepup">
+        Changing federation changes who can sign in. It requires a fresh authentication within the last 5 minutes.
+      </div>
+      <div class="panel" style="margin-top:var(--space-4)">
+        <div class="table-wrap">
+          <table id="fed-table">
+            <thead><tr><th>Tenant</th><th>Provider</th><th>Protocol</th><th>Issuer</th><th>State</th></tr></thead>
+            <tbody>
+              <tr><td>northwind</td><td>Okta</td><td class="mono">OIDC</td><td class="mono">northwind.okta.com</td><td><span class="pill s-ok"><span class="dot"></span>active</span></td></tr>
+              <tr><td>eastbrook</td><td>Entra ID</td><td class="mono">SAML</td><td class="mono">sts.windows.net/8f1c&hellip;</td><td><span class="pill s-ok"><span class="dot"></span>active</span></td></tr>
+              <tr><td>halcyon</td><td>Keycloak</td><td class="mono">OIDC</td><td class="mono">sso.halcyon.example</td><td><span class="pill s-ok"><span class="dot"></span>active</span></td></tr>
+              <tr><td>meridian</td><td>PingFederate</td><td class="mono">SAML</td><td class="mono">ping.meridian.example</td><td><span class="pill s-warn"><span class="dot"></span>metadata expires in 9d</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ---------------- CERTIFICATES ---------------- -->
+    <div class="content" id="screen-certificates" hidden>
+      <div class="page-head">
+        <div>
+          <h1>Certificates</h1>
+          <p>Issued by the environment CA, listed by SPIFFE ID. Renewal copies the ID from the peer, never the CSR.</p>
+        </div>
+        <div class="spacer"></div>
+        <button class="btn btn-secondary" type="button" data-go="revocation">Revocation</button>
+      </div>
+      <div class="panel">
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>SPIFFE ID</th><th>Serial</th><th>Profile</th><th>Not after</th><th>State</th></tr></thead>
+            <tbody>
+              <tr><td class="mono">/service/rackmarshal-gateway</td><td class="mono">3f:a1:09:cc</td><td class="mono">service</td><td class="mono">in 5d</td><td><span class="pill s-ok"><span class="dot"></span>valid</span></td></tr>
+              <tr><td class="mono">/service/rackmarshal-identity</td><td class="mono">7b:2e:41:90</td><td class="mono">service</td><td class="mono">in 5d</td><td><span class="pill s-ok"><span class="dot"></span>valid</span></td></tr>
+              <tr><td class="mono">/service/rackmarshal-inventory</td><td class="mono">1c:88:d0:3a</td><td class="mono">service</td><td class="mono">in 6d</td><td><span class="pill s-ok"><span class="dot"></span>valid</span></td></tr>
+              <tr><td class="mono">/agent/7f3k2m9d4b</td><td class="mono">9a:05:be:71</td><td class="mono">agent</td><td class="mono">in 7d</td><td><span class="pill s-ok"><span class="dot"></span>valid</span></td></tr>
+              <tr><td class="mono">/agent/6r3t8y2u4i</td><td class="mono">2d:63:1f:84</td><td class="mono">agent</td><td class="mono">in 2d</td><td><span class="pill s-warn"><span class="dot"></span>renewing</span></td></tr>
+              <tr><td class="mono">/control-node/cn-prod-01</td><td class="mono">5e:97:22:ab</td><td class="mono">control-node</td><td class="mono">&mdash;</td><td><span class="pill s-crit"><span class="dot"></span>revoked</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ---------------- REVOCATION ---------------- -->
+    <div class="content" id="screen-revocation" hidden>
+      <div class="page-head">
+        <div>
+          <h1>Revocation</h1>
+          <p>A CRL past its <span class="mono">nextUpdate</span> stops agents accepting new directive bundles.</p>
+        </div>
+      </div>
+      <div class="two-col">
+        <div class="panel">
+          <div class="panel-head"><h3>Freshness</h3><div class="spacer"></div><span class="pill s-ok"><span class="dot"></span>current</span></div>
+          <div class="panel-body">
+            <dl class="kv">
+              <dt>CRL nextUpdate</dt><dd>2026-09-19T04:37:00Z &middot; 19h left</dd>
+              <dt>OCSP nextUpdate</dt><dd>2026-09-18T10:18:00Z &middot; 41m left</dd>
+              <dt>CRL source</dt><dd>/identity/pki/&lt;env&gt;/crl.der</dd>
+              <dt>Mirror</dt><dd>configured, off the gateway path</dd>
+            </dl>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h3>Revoke a certificate</h3></div>
+          <div class="panel-body" style="display:flex;flex-direction:column;gap:var(--space-4)">
+            <div class="field">
+              <label for="rev-serial">Certificate serial</label>
+              <input id="rev-serial" type="text" placeholder="3f:a1:09:cc" spellcheck="false">
+            </div>
+            <div class="field">
+              <label for="rev-reason">Reason</label>
+              <select id="rev-reason" style="font:inherit;font-size:var(--text-sm);padding:6px var(--space-3);border:1px solid var(--border-strong);border-radius:var(--radius-md);background:var(--surface);color:var(--text)">
+                <option>keyCompromise</option><option>superseded</option><option>cessationOfOperation</option>
+              </select>
+            </div>
+            <button class="btn btn-critical" type="button" data-stepup="Revoke a certificate in prod-east" style="align-self:flex-start">Revoke</button>
+          </div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h3>Revoked</h3><div class="spacer"></div><span class="muted mono" style="font-size:var(--text-xs)">3 certificates</span></div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Serial</th><th>SPIFFE ID</th><th>Reason</th><th>Revoked</th></tr></thead>
+            <tbody>
+              <tr><td class="mono">5e:97:22:ab</td><td class="mono">/control-node/cn-prod-01</td><td class="mono">keyCompromise</td><td class="mono">08:31:55Z</td></tr>
+              <tr><td class="mono">c4:11:7d:62</td><td class="mono">/agent/8k2m4p9x1z</td><td class="mono">cessationOfOperation</td><td class="mono">2026-09-14</td></tr>
+              <tr><td class="mono">a0:3e:95:18</td><td class="mono">/agent/5t7y2u8i3o</td><td class="mono">superseded</td><td class="mono">2026-09-02</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ---------------- AGENTS (cross-tenant) ---------------- -->
+    <div class="content" id="screen-agents" hidden>
+      <div class="page-head">
+        <div>
+          <h1>Agents</h1>
+          <p>Every agent in <strong>prod-east</strong>, across all tenants. Scope is explicit here by design.</p>
+        </div>
+        <div class="spacer"></div>
+        <button class="btn btn-secondary" type="button" data-go="enrollment">Enrollment tokens</button>
+      </div>
+      <div class="panel">
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Agent ID</th><th>Tenant</th><th>Endpoint</th><th>Version</th><th>Certificate</th><th>Last report</th></tr></thead>
+            <tbody>
+              <tr><td class="mono">7f3k2m9d4b</td><td>northwind</td><td>web-01</td><td class="mono">0.4.2</td><td class="mono">in 7d</td><td class="mono">2m ago</td></tr>
+              <tr><td class="mono">4b8n2c9v5k</td><td>northwind</td><td>db-02</td><td class="mono">0.4.2</td><td class="mono">in 7d</td><td class="mono">1m ago</td></tr>
+              <tr><td class="mono">6r3t8y2u4i</td><td>northwind</td><td>cache-01</td><td class="mono">0.4.1</td><td class="mono" style="color:var(--warn)">in 2d</td><td class="mono" style="color:var(--warn)">3h 22m ago</td></tr>
+              <tr><td class="mono">3x9c5v1b7n</td><td>eastbrook</td><td>app-14</td><td class="mono">0.4.2</td><td class="mono">in 6d</td><td class="mono">4m ago</td></tr>
+              <tr><td class="mono">8m2k6j4h0g</td><td>meridian</td><td>etl-02</td><td class="mono">0.4.2</td><td class="mono">in 4d</td><td class="mono">1m ago</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ---------------- ENROLLMENT (console) ---------------- -->
+    <div class="content" id="screen-enrollment" hidden>
+      <div class="page-head">
+        <div>
+          <h1>Enrollment tokens</h1>
+          <p>Single-use credentials that enrol a host or a service into <strong>prod-east</strong>.</p>
+        </div>
+        <div class="spacer"></div>
+        <button class="btn btn-primary" type="button" data-stepup-form="enrollment">Issue token</button>
+      </div>
+      <div class="stepup">
+        Issuing a token creates trust. It requires a fresh authentication, and in hardened tiers that lands
+        on a security key.
+      </div>
+      <div class="panel" style="margin-top:var(--space-4)">
+        <div class="table-wrap">
+          <table id="cenroll-table">
+            <thead><tr><th>Token ID</th><th>Kind</th><th>Tenant</th><th>Issued by</th><th>Expires</th><th>State</th></tr></thead>
+            <tbody>
+              <tr><td class="mono">en-b41f07</td><td class="mono">agent</td><td>eastbrook</td><td>Priya Ramanathan</td><td class="mono">in 52m</td><td><span class="pill s-idle"><span class="dot"></span>unused</span></td></tr>
+              <tr><td class="mono">en-3f9a21</td><td class="mono">agent</td><td>northwind</td><td>Priya Ramanathan</td><td class="mono">in 46m</td><td><span class="pill s-idle"><span class="dot"></span>unused</span></td></tr>
+              <tr><td class="mono">en-77c0b3</td><td class="mono">service</td><td class="muted">&mdash;</td><td>Marcus Bell</td><td class="mono">in 51m</td><td><span class="pill s-warn"><span class="dot"></span>awaiting approval</span></td></tr>
+              <tr><td class="mono">en-1c7d84</td><td class="mono">agent</td><td>northwind</td><td>Priya Ramanathan</td><td class="mono">&mdash;</td><td><span class="pill s-ok"><span class="dot"></span>redeemed</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ---------------- PUBLISHERS ---------------- -->
+    <div class="content" id="screen-publishers" hidden>
+      <div class="page-head">
+        <div>
+          <h1>Plugin publishers</h1>
+          <p>Identities whose signatures are accepted for plugin imports. Keyless identities are matched structurally.</p>
+        </div>
+        <div class="spacer"></div>
+        <button class="btn btn-primary" type="button" data-stepup-form="publisher">Add publisher</button>
+      </div>
+      <div class="stepup">
+        A publisher record decides whose code can run on managed hosts. Adding one requires a fresh authentication.
+      </div>
+      <div class="panel" style="margin-top:var(--space-4)">
+        <div class="table-wrap">
+          <table id="pub-table">
+            <thead><tr><th>Publisher</th><th>Issuer</th><th>Identity</th><th>Added</th></tr></thead>
+            <tbody>
+              <tr>
+                <td>servercurio</td>
+                <td class="mono">token.actions.githubusercontent.com</td>
+                <td class="mono">servercurio/rackmarshal-agent-plugins<span class="muted" style="display:block">.github/workflows/release.yaml@refs/tags/v*</span></td>
+                <td class="mono">2026-05-11</td>
+              </tr>
+              <tr>
+                <td>acme-internal</td>
+                <td class="mono">token.actions.githubusercontent.com</td>
+                <td class="mono">acme/rackmarshal-plugins<span class="muted" style="display:block">.github/workflows/publish.yaml@refs/heads/main</span></td>
+                <td class="mono">2026-07-29</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ---------------- IMPORTS ---------------- -->
+    <div class="content" id="screen-imports" hidden>
+      <div class="page-head">
+        <div>
+          <h1>Plugin imports</h1>
+          <p>Verified at import against the referenced publisher, and again on each host by the core validator.</p>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Plugin</th><th>Version</th><th>Digest</th><th>Rekor index</th><th>Integrated</th><th>State</th></tr></thead>
+            <tbody>
+              <tr><td class="mono">sysfacts</td><td class="mono">0.4.2</td><td class="mono">9f2c4e7a1b8d</td><td class="mono">184203771</td><td class="mono">2026-09-02</td><td><span class="pill s-ok"><span class="dot"></span>verified</span></td></tr>
+              <tr><td class="mono">sigstore</td><td class="mono">0.4.2</td><td class="mono">3c7b1e948a2f</td><td class="mono">184203770</td><td class="mono">2026-09-02</td><td><span class="pill s-ok"><span class="dot"></span>verified</span></td></tr>
+              <tr><td class="mono">packages</td><td class="mono">0.3.9</td><td class="mono">b1e73c084d9a</td><td class="mono">183991204</td><td class="mono">2026-08-19</td><td><span class="pill s-ok"><span class="dot"></span>verified</span></td></tr>
+              <tr><td class="mono">acme-backup</td><td class="mono">1.2.0</td><td class="mono">77c0b3e19f4d</td><td class="mono">184110882</td><td class="mono">2026-08-28</td><td><span class="pill s-ok"><span class="dot"></span>verified</span></td></tr>
+              <tr><td class="mono">acme-backup</td><td class="mono">1.1.4</td><td class="mono">6b30e7c41a58</td><td class="mono muted">&mdash;</td><td class="mono muted">&mdash;</td><td><span class="pill s-crit"><span class="dot"></span>superseded</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ---------------- CORE KEY ---------------- -->
+    <div class="content" id="screen-corekey" hidden>
+      <div class="page-head">
+        <div>
+          <h1>Core plugin key</h1>
+          <p>Which embedded key agents currently trust for core plugins, and what has been revoked.</p>
+        </div>
+      </div>
+      <div class="two-col">
+        <div class="panel">
+          <div class="panel-head"><h3>Current</h3><div class="spacer"></div><span class="pill s-ok"><span class="dot"></span>active</span></div>
+          <div class="panel-body">
+            <dl class="kv">
+              <dt>coreKeyId</dt><dd>ck-7c4a19</dd>
+              <dt>Named by</dt><dd>directive bundle, generation 1188</dd>
+              <dt>Custody</dt><dd>release workflow, HSM</dd>
+              <dt>Environments</dt><dd>prod-east</dd>
+            </dl>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h3>Next</h3><div class="spacer"></div><span class="pill s-idle"><span class="dot"></span>embedded, not current</span></div>
+          <div class="panel-body">
+            <dl class="kv">
+              <dt>coreKeyId</dt><dd>ck-2f8b63</dd>
+              <dt>Custody</dt><dd>offline HSM, M-of-N split control</dd>
+              <dt>Activation</dt><dd>a bundle naming it, plus out-of-band approval</dd>
+            </dl>
+          </div>
+        </div>
+      </div>
+      <div class="stepup">
+        The console can display a changeover but does not initiate one &mdash; 0018 records whether it should
+        as an open question. Introducing a third key needs an agent release; making the next one current does not.
+      </div>
+      <div class="panel" style="margin-top:var(--space-4)">
+        <div class="panel-head"><h3>Revocation list</h3><div class="spacer"></div><span class="muted mono" style="font-size:var(--text-xs)">signed by the other embedded key</span></div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Entry</th><th>Type</th><th>Reason</th><th>Added</th></tr></thead>
+            <tbody>
+              <tr><td class="mono">ck-4e6c25</td><td class="mono">key id</td><td>retired at rotation</td><td class="mono">2026-06-18</td></tr>
+              <tr><td class="mono">6b30e7c41a58</td><td class="mono">plugin digest</td><td>superseded build</td><td class="mono">2026-08-28</td></tr>
             </tbody>
           </table>
         </div>
@@ -613,6 +1044,23 @@
              the rest are navigable but unbuilt.</p>
         </div>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- ---------------- FORM MODAL ---------------- -->
+<div class="scrim" id="formscrim" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="form-title">
+    <h2 id="form-title">&nbsp;</h2>
+    <p id="form-note" class="muted" style="font-size:var(--text-xs)"></p>
+    <div id="form-fields" style="display:flex;flex-direction:column;gap:var(--space-4)"></div>
+    <div id="form-secret" hidden style="display:flex;flex-direction:column;gap:var(--space-2)">
+      <span class="muted" style="font-size:var(--text-xs)">Shown once. It is never displayed again and never logged.</span>
+      <div class="digest" id="form-secret-value"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" type="button" data-close="formscrim">Cancel</button>
+      <button class="btn btn-primary" type="button" id="form-submit">Save</button>
     </div>
   </div>
 </div>
@@ -656,14 +1104,28 @@
   <span class="lbl">Screen</span>
   <button type="button" data-go="overview" aria-current="true">Overview</button>
   <button type="button" data-go="approvals">Approvals</button>
+  <button type="button" data-go="tenants">Tenants</button>
+  <button type="button" data-go="tenant">Tenant</button>
+  <button type="button" data-go="users">Users</button>
+  <button type="button" data-go="federation">Federation</button>
   <button type="button" data-go="pki">PKI</button>
+  <button type="button" data-go="certificates">Certificates</button>
+  <button type="button" data-go="revocation">Revocation</button>
+  <button type="button" data-go="corekey">Core key</button>
+  <button type="button" data-go="agents">Agents</button>
+  <button type="button" data-go="enrollment">Enrollment</button>
+  <button type="button" data-go="publishers">Publishers</button>
+  <button type="button" data-go="imports">Imports</button>
   <button type="button" data-go="audit">Audit</button>
+  <button type="button" data-go="anchors">Anchors</button>
 </div>
 
 <script>
   (function () {
     var root = document.documentElement;
-    var SCREENS = ["overview", "approvals", "pki", "audit", "stub"];
+    var SCREENS = ["overview", "approvals", "tenants", "tenant", "users", "federation",
+                   "pki", "certificates", "revocation", "corekey", "agents", "enrollment",
+                   "publishers", "imports", "audit", "anchors", "stub"];
 
     function show(name) {
       SCREENS.forEach(function (s) {
@@ -681,7 +1143,156 @@
       window.scrollTo(0, 0);
     }
 
+    // ---------- add / edit forms ----------
+    function rid(n) { var c = "0123456789abcdef", o = ""; for (var i = 0; i < n; i++) o += c[Math.floor(Math.random() * 16)]; return o; }
+    function esc(t) {
+      return String(t == null ? "" : t).replace(/[&<>"\']/g, function (m) {
+        return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "\'": "&#39;" })[m];
+      });
+    }
+    var SEL = "font:inherit;font-size:var(--text-sm);padding:6px var(--space-3);border:1px solid var(--border-strong);border-radius:var(--radius-md);background:var(--surface);color:var(--text)";
+
+    var FORMS = {
+      tenant: {
+        title: "Create tenant", submit: "Create",
+        note: "A tenant scopes endpoints, members and directives. Quotas can be raised later.",
+        fields: [
+          { id: "name", label: "Name", placeholder: "cascade" },
+          { id: "quota", label: "Endpoint quota", type: "select", options: ["25", "50", "100", "250"] }
+        ],
+        target: "#tenant-table tbody",
+        row: function (v) {
+          return "<td>" + esc(v.name || "untitled") + "</td><td class='mono'>tn-" + rid(6) + "</td>" +
+                 "<td class='mono'>0</td><td class='mono'>0</td>" +
+                 "<td><span class='pill s-ok'><span class='dot'></span>active</span></td>";
+        }
+      },
+      user: {
+        title: "Add platform user", submit: "Add",
+        note: "Platform administrators sign in through the deployment's own provider. Local accounts are break-glass only.",
+        fields: [
+          { id: "email", label: "Email", placeholder: "name@servercurio.com" },
+          { id: "role", label: "Role", type: "select", options: ["platform-admin", "auditor"] },
+          { id: "signin", label: "Sign-in", type: "select", options: ["Okta", "local (break-glass)"] }
+        ],
+        target: "#user-table tbody",
+        row: function (v) {
+          var n = (v.email || "").split("@")[0].replace(/[._]/g, " ");
+          var local = v.signin.indexOf("local") === 0;
+          return "<td>" + esc(n || "new user") + "<span class='mono muted' style='display:block;font-size:var(--text-xs)'>" + esc(v.email) + "</span></td>" +
+                 "<td class='mono'>" + esc(v.role) + "</td><td class='mono muted'>" + esc(v.signin) + "</td>" +
+                 "<td><span class='pill " + (local ? "s-warn'><span class='dot'></span>TOTP" : "s-ok'><span class='dot'></span>WebAuthn") + "</span></td>" +
+                 "<td class='mono muted'>never</td>";
+        }
+      },
+      federation: {
+        title: "Add identity provider", submit: "Add provider",
+        note: "Every federated path still resolves to a rackmarshal-identity principal.",
+        fields: [
+          { id: "tenant", label: "Tenant", type: "select", options: ["northwind", "eastbrook", "halcyon", "meridian", "quarry"] },
+          { id: "provider", label: "Provider", placeholder: "Okta" },
+          { id: "protocol", label: "Protocol", type: "select", options: ["OIDC", "SAML"] },
+          { id: "issuer", label: "Issuer", placeholder: "sso.example.com" }
+        ],
+        target: "#fed-table tbody",
+        row: function (v) {
+          return "<td>" + esc(v.tenant) + "</td><td>" + esc(v.provider || "provider") + "</td>" +
+                 "<td class='mono'>" + esc(v.protocol) + "</td><td class='mono'>" + esc(v.issuer) + "</td>" +
+                 "<td><span class='pill s-ok'><span class='dot'></span>active</span></td>";
+        }
+      },
+      enrollment: {
+        title: "Issue enrollment token", submit: "Issue",
+        note: "A service token is bound to the CSR public key registered with it, not only to a name.",
+        fields: [
+          { id: "kind", label: "Kind", type: "select", options: ["agent", "service"] },
+          { id: "tenant", label: "Tenant", type: "select", options: ["northwind", "eastbrook", "halcyon", "meridian"] },
+          { id: "ttl", label: "Expires in", type: "select", options: ["15 minutes", "1 hour"] }
+        ],
+        secret: function () { return "fe1.k7m2q9x4bt6vn8rc3wzhy5jd1f.9f2c4e7a.en-" + rid(6) + "." + rid(32); },
+        target: "#cenroll-table tbody",
+        row: function (v) {
+          var svc = v.kind === "service";
+          return "<td class='mono'>en-" + rid(6) + "</td><td class='mono'>" + esc(v.kind) + "</td>" +
+                 "<td>" + (svc ? "<span class='muted'>&mdash;</span>" : esc(v.tenant)) + "</td>" +
+                 "<td>Priya Ramanathan</td><td class='mono'>in " + esc(v.ttl) + "</td>" +
+                 "<td><span class='pill " + (svc ? "s-warn'><span class='dot'></span>awaiting approval" : "s-idle'><span class='dot'></span>unused") + "</span></td>";
+        }
+      },
+      publisher: {
+        title: "Add plugin publisher", submit: "Add",
+        note: "A publisher record decides whose code may run on managed hosts. Keyless identities are matched structurally.",
+        fields: [
+          { id: "name", label: "Publisher", placeholder: "acme-internal" },
+          { id: "issuer", label: "Issuer", value: "token.actions.githubusercontent.com" },
+          { id: "repo", label: "Repository", placeholder: "acme/rackmarshal-plugins" },
+          { id: "workflow", label: "Workflow and ref", placeholder: ".github/workflows/publish.yaml@refs/heads/main" }
+        ],
+        target: "#pub-table tbody",
+        row: function (v) {
+          return "<td>" + esc(v.name || "publisher") + "</td><td class='mono'>" + esc(v.issuer) + "</td>" +
+                 "<td class='mono'>" + esc(v.repo) + "<span class='muted' style='display:block'>" + esc(v.workflow) + "</span></td>" +
+                 "<td class='mono'>today</td>";
+        }
+      }
+    };
+
+    var activeForm = null;
+    function openForm(name) {
+      var f = FORMS[name]; if (!f) return;
+      activeForm = name;
+      document.getElementById("form-title").textContent = f.title;
+      document.getElementById("form-note").textContent = f.note || "";
+      document.getElementById("form-secret").hidden = true;
+      var submit = document.getElementById("form-submit");
+      submit.textContent = f.submit || "Save"; submit.hidden = false;
+      var wrap = document.getElementById("form-fields");
+      wrap.hidden = false;
+      wrap.innerHTML = f.fields.map(function (fd) {
+        var id = "ff-" + fd.id;
+        if (fd.type === "select") {
+          return "<div class='field'><label for='" + id + "'>" + esc(fd.label) + "</label><select id='" + id + "' style=\"" + SEL + "\">" +
+                 fd.options.map(function (o) { return "<option>" + esc(o) + "</option>"; }).join("") + "</select></div>";
+        }
+        return "<div class='field'><label for='" + id + "'>" + esc(fd.label) + "</label>" +
+               "<input id='" + id + "' type='text' value='" + esc(fd.value || "") + "' placeholder='" + esc(fd.placeholder || "") + "' spellcheck='false'></div>";
+      }).join("");
+      document.getElementById("formscrim").hidden = false;
+      var first = wrap.querySelector("input, select"); if (first) first.focus();
+    }
+
+    document.getElementById("form-submit").addEventListener("click", function () {
+      var f = FORMS[activeForm]; if (!f) return;
+      var v = {};
+      f.fields.forEach(function (fd) { var el = document.getElementById("ff-" + fd.id); if (el) v[fd.id] = el.value; });
+      if (f.target && f.row) {
+        var tb = document.querySelector(f.target);
+        if (tb) { var tr = document.createElement("tr"); tr.innerHTML = f.row(v); tb.insertBefore(tr, tb.firstChild); }
+      }
+      if (f.secret) {
+        document.getElementById("form-secret-value").textContent = f.secret();
+        document.getElementById("form-secret").hidden = false;
+        document.getElementById("form-fields").hidden = true;
+        document.getElementById("form-note").textContent = "Issued. Copy the value now.";
+        this.hidden = true;
+        return;
+      }
+      document.getElementById("formscrim").hidden = true;
+    });
+
+    var pendingForm = null;
+
     document.addEventListener("click", function (e) {
+      var sf = e.target.closest("[data-stepup-form]");
+      if (sf) {
+        pendingForm = sf.dataset.stepupForm;
+        document.getElementById("stepup-what").textContent = (FORMS[pendingForm] || {}).title + ".";
+        document.getElementById("stepup").hidden = false;
+        return;
+      }
+      var form = e.target.closest("[data-form]");
+      if (form) { openForm(form.dataset.form); return; }
+
       var go = e.target.closest("[data-go]");
       if (go) { show(go.dataset.go); return; }
 
@@ -704,7 +1315,13 @@
       }
 
       var close = e.target.closest("[data-close]");
-      if (close) document.getElementById(close.dataset.close).hidden = true;
+      if (close) {
+        document.getElementById(close.dataset.close).hidden = true;
+        if (close.dataset.close === "stepup" && pendingForm && close.classList.contains("btn-primary")) {
+          var n = pendingForm; pendingForm = null; openForm(n);
+        }
+        return;
+      }
     });
 
     document.getElementById("confirm-input").addEventListener("input", function () {
@@ -717,6 +1334,7 @@
       if (e.key === "Escape") {
         document.getElementById("confirm").hidden = true;
         document.getElementById("stepup").hidden = true;
+        document.getElementById("formscrim").hidden = true;
       }
     });
 
