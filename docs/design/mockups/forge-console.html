@@ -1,5 +1,6 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
+<meta charset="utf-8">
 <title>Forge Console Prototype</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -8,6 +9,8 @@
 
 <style>
   *, *::before, *::after { box-sizing: border-box; }
+  /* `hidden` has to outrank the display set on .content and .standalone below */
+  [hidden] { display: none !important; }
   body {
     margin: 0; background: var(--bg); color: var(--text);
     font-family: var(--font-body); font-size: var(--text-sm); line-height: 1.55;
@@ -189,13 +192,32 @@
   .proto-bar button[aria-current="true"] { background: var(--action); color: var(--action-text); }
 
   @media (max-width: 900px) {
+    /* the grid column must be allowed to shrink, or a wide nav forces the page wider than the screen */
     .shell { grid-template-columns: 1fr; }
-    .rail { position: static; height: auto; flex-direction: row; align-items: center; overflow-x: auto; gap: var(--space-4); }
-    .rail nav { flex-direction: row; }
+    .shell > * { min-width: 0; }
+    .rail {
+      position: static; height: auto; flex-direction: row; align-items: center;
+      gap: var(--space-3); padding: var(--space-3) var(--space-3);
+      overflow-x: auto; -webkit-overflow-scrolling: touch;
+      scrollbar-width: thin; min-width: 0;
+    }
+    .rail-brand { padding: 0; flex: none; }
+    .rail nav { flex-direction: row; flex-wrap: nowrap; min-width: 0; padding: 0; }
+    .nav-item { white-space: nowrap; flex: none; }
     .nav-label, .nav-item .count { display: none; }
+    /* the fixed prototype bar would otherwise sit on top of the last panel */
+    body { padding-bottom: 150px; }
+    .topbar { flex-wrap: wrap; row-gap: var(--space-2); }
+    .env, .who { flex: none; }
+    .env .muted, .who .muted { white-space: nowrap; }
     .tiles { grid-template-columns: repeat(2, 1fr); }
     .two-col { grid-template-columns: 1fr; }
   }
+  @media (max-width: 480px) {
+    .rail-brand .n { display: none; }
+    .who .muted { display: none; }
+  }
+
   @media (max-width: 560px) {
     .tiles { grid-template-columns: 1fr; }
     .kv { grid-template-columns: 1fr; }
