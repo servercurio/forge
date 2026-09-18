@@ -9,9 +9,9 @@
 - **Date:** 2026-09-18
 - **Summary:** One catalogue specifying every desired-state kind field by field. It is the design input
   the Go structures are first written from; once those structures exist they are the single source, and
-  the OpenAPI 3.1 documents, the JSON Schema files, and the reference documentation are all generated
-  from them. This reverses the contract-first direction [0002](0002-rackmarshal-api-schema.md) proposed,
-  and amends it.
+  the OpenAPI 3.0 component schemas and the reference documentation are generated from them. There are
+  no standalone JSON Schema files. This reverses the contract-first direction
+  [0002](0002-rackmarshal-api-schema.md) proposed, and amends it.
 
 > An initial draft. The kinds themselves were proposed in [0011](0011-rackmarshal-provisioner.md); this
 > document specifies them. Conventions other repositories depend on are summarized in
@@ -47,30 +47,32 @@ it produces is plausible rather than verified, because there was nothing to veri
 
 Two phases, and the distinction matters more than anything else in this document.
 
-**Bootstrap.** This catalogue is the specification. The Go structures in `rackmarshal-api-schema` under
-`pkg/desiredstate/v1alpha1` are written from it, by hand, once.
+**Bootstrap.** This catalogue is the specification. The Go types in `rackmarshal-api-schema` under
+`pkg/desiredstate/v1alpha1` are written from it, by hand, once. That repository holds the shared types
+for service APIs, OPA, and these manifests ([0002](0002-rackmarshal-api-schema.md)).
 
-**Steady state.** The Go structures are the single source of truth. Everything else is generated:
+**Steady state.** The Go types are the single source of truth. Everything else is generated:
 
-| Artefact                                | Generated from      | Drift check                         |
-|-----------------------------------------|---------------------|-------------------------------------|
-| `schemas/<group>/<version>/<kind>.schema.json` | Go structures | regenerate in CI, fail on diff      |
-| OpenAPI 3.1 component schemas for kinds | Go structures       | regenerate in CI, fail on diff      |
-| Reference documentation for each kind   | Go structures       | regenerate in CI, fail on diff      |
-| This document's field tables            | Go structures       | regenerate in CI, fail on diff      |
+| Artefact                                | Generated from | Drift check                    |
+|-----------------------------------------|----------------|--------------------------------|
+| OpenAPI 3.0 component schemas for kinds | Go types       | regenerate in CI, fail on diff |
+| Reference documentation for each kind   | Go types       | regenerate in CI, fail on diff |
+| This document's field tables            | Go types       | regenerate in CI, fail on diff |
 
-The last row is the one that keeps this document honest. Once the structures exist, the field tables
-below are regenerated from them rather than maintained by hand, so the catalogue cannot drift from the
-code the way the schemas and the wizard already drifted from each other. What stays hand-written here is
+There are no standalone JSON Schema files. A kind is described by its Go type and nothing else, which
+is the whole point: a second description is a second thing to disagree with.
+
+The last row is the one that keeps this document honest. Once the types exist, the field tables below
+are regenerated from them rather than maintained by hand, so the catalogue cannot drift from the code
+the way the schemas and the wizard already drifted from each other. What stays hand-written here is
 everything a struct tag cannot carry: the rationale, and the invariants in
 [Invariants](#invariants-a-type-cannot-carry).
 
-**What this costs.** 0002 chose contract-first for a stated reason: `rackmarshal-sdk`, the gateway, and
-the first services are built in parallel, and a hand-written contract lets all of them start at once.
-Under this direction the Go structures must exist before the contract does. The mitigation is that they
-live in `rackmarshal-api-schema` rather than in any service, so they can be written from this catalogue
-before a single service exists — which is what the bootstrap phase is for. The parallelism survives; its
-starting point moves from a YAML document to a Go package.
+**What this costs.** 0002 originally chose contract-first so that `rackmarshal-sdk`, the gateway, and
+the first services could start in parallel from a hand-written document. Under this direction the types
+must exist first instead — and they can, because they live in `rackmarshal-api-schema` rather than in
+any service, and every consumer imports that one module. The parallelism survives; its starting point
+moves from a YAML document to a Go package.
 
 ### The document envelope
 
@@ -265,9 +267,12 @@ OpenAPI components, and the generated JSON Schema files are compared the same wa
   would make the catalogue itself the build input. Rejected once the direction was settled: after
   bootstrap the Go structures are the source, so a parseable Markdown block would be a second source
   competing with them.
-- **Generating the Go structures from JSON Schema** rather than the reverse. Viable, and it keeps the
-  schema authoritative, but the generators produce types shaped by the schema rather than by Go, and the
+- **Generating the Go types from JSON Schema** rather than the reverse. Viable, and it keeps a schema
+  authoritative, but the generators produce types shaped by the schema rather than by Go, and the
   invariants above still have to live somewhere else.
+- **Keeping standalone JSON Schema files alongside the generated OpenAPI components.** Rejected: it
+  reinstates the second description this document exists to remove, and nothing needs it once one Go
+  type describes both a manifest and the API body that carries it.
 
 ## Open questions
 
@@ -291,5 +296,5 @@ OpenAPI components, and the generated JSON Schema files are compared the same wa
 - [0011](0011-rackmarshal-provisioner.md) — the kinds, admission, rendering, conflicts, and device drivers.
 - [0012](0012-rackmarshal-agent.md) — host-phase policy, bundle generation bounds, and what the agent refuses.
 - [0017](0017-rackmarshal-portal.md) — the guided flow that produces a `DirectiveSet`.
-- [JSON Schema 2020-12](https://json-schema.org/draft/2020-12) — dialect of the generated schemas.
-- [OpenAPI 3.1.1](https://spec.openapis.org/oas/v3.1.1.html) — whose Schema Object is JSON Schema 2020-12.
+- [OpenAPI Specification 3.0.3](https://spec.openapis.org/oas/v3.0.3.html) — the generated document
+  version.

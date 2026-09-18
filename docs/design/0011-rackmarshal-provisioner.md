@@ -56,9 +56,9 @@ through `rackmarshal-gateway`'s mutual-TLS agent ingress. Both paths converge ag
 
 #### Document model
 
-Kinds in `rackmarshal.servercurio.com/v1alpha1`. [0020](0020-desired-state-kinds.md) specifies every field;
-the JSON Schema at `schemas/rackmarshal.servercurio.com/v1alpha1/<kind>.schema.json` in
-[0002](0002-rackmarshal-api-schema.md) is generated from the Go structures rather than written by hand:
+Kinds in `rackmarshal.servercurio.com/v1alpha1`. [0020](0020-desired-state-kinds.md) specifies every field,
+and the Go types carrying them live in [0002](0002-rackmarshal-api-schema.md), which generates the OpenAPI
+components and reference material from those types rather than from hand-written schema files:
 
 | Kind               | Purpose                                                                         |
 |--------------------|---------------------------------------------------------------------------------|
@@ -98,7 +98,7 @@ spec:
 - **Conversion** — the provisioner stores documents as written and converts between `apiVersion`s in
   Go when a newer version exists (0002 assigns conversion here).
 
-#### HTTP API (`openapi/provisioner/v1alpha1/openapi.yaml`)
+#### HTTP API (generated to `gen/openapi/provisioner/v1alpha1/openapi.yaml`)
 
 | Method and path                                                  | Audience   | Notes                              |
 |------------------------------------------------------------------|------------|------------------------------------|

@@ -46,13 +46,11 @@ a module, as 0001 is.
 
 ## API contract and style
 
-- **One contract format.** Every Rackmarshal HTTP API is an OpenAPI 3.1 document in `rackmarshal-api-schema`
-  (`openapi/<service>/<version>/openapi.yaml`), written first; service code is generated from or tested
-  against it. Desired-state kinds go the other way: their Go structures in
-  `pkg/desiredstate/<version>` are authoritative, and the JSON Schema files
-  (`schemas/<group>/<version>/<kind>.schema.json`), the OpenAPI component schemas for kinds, and the
-  reference documentation are generated from them and drift-checked in CI.
-  [0020](0020-desired-state-kinds.md) specifies the kinds and sets that direction.
+- **Types are the contract.** `rackmarshal-api-schema` holds the Go types for service APIs, for OPA inputs,
+  outputs and policy state, and for desired-state manifests. Those types are authoritative: the OpenAPI 3.0
+  documents and the reference documentation are generated from them, never written by hand, and CI fails on
+  drift. There are no standalone JSON Schema files. [0002](0002-rackmarshal-api-schema.md) sets the
+  direction; [0020](0020-desired-state-kinds.md) specifies the manifest kinds.
 - **REST + JSON, internal and external.** Services call each other over the same contract with mutual
   TLS. There is no service-to-service gRPC; gRPC appears only between `rackmarshal-agent` and plugins, whose
   go-plugin protobuf contract lives in `rackmarshal-agent-plugin-sdk`.

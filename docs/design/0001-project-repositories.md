@@ -101,7 +101,7 @@ entry point, so managed hosts never share an ingress with administrators. See
 | Repository               | Axis · Category                    | Purpose                                                                                                                                                                                                                                                                                                                                       | Starter baseline                 |
 |--------------------------|------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------|
 | `rackmarshal` (this)           | Platform · Docs & site             | Documentation, design assets, website; shared-meta source of truth                                                                                                                                                                                                                                                                            | — (already exists)               |
-| `rackmarshal-api-schema`       | Platform · Shared library          | API contracts (protobuf/OpenAPI) — the inter-service and client schema                                                                                                                                                                                                                                                                        | `go-library-starter`             |
+| `rackmarshal-api-schema`       | Platform · Shared library          | Go types for service APIs, OPA inputs/outputs/state, and desired-state manifests; the OpenAPI documents and reference material are generated from them                                                                                                                                                                                                                                                                        | `go-library-starter`             |
 | `rackmarshal-sdk`              | Platform · Shared library          | Generated Go client SDK for the public API, published as a single Go module; used by `rackmarshal-cli`, `rackmarshal-agent`, and 3rd-party clients                                                                                                                                                                                                        | `go-library-starter`             |
 | `rackmarshal-common`           | Platform · Shared library          | Shared logging and telemetry: wraps the starters' zerolog logging, correlates logs with traces, and exports OpenTelemetry data over OTLP/HTTP without gRPC; used by every Rackmarshal Go repository                                                                                                                                                 | `go-library-starter`             |
 | `rackmarshal-gateway`          | Platform · Go service / API        | Edge/API gateway: routing, authN/Z enforcement, rate limiting; separate mutual-TLS ingress for agents                                                                                                                                                                                                                                         | `go-echo-starter`                |
@@ -152,7 +152,7 @@ to deploy Rackmarshal itself:
 
 - **Custom YAML** — Rackmarshal's own schema describing the desired state of managed endpoints. Every
   document declares an `apiVersion` (e.g. `rackmarshal.servercurio.com/v1alpha1`) and a `kind`, and the JSON
-  Schemas for each version are published from `rackmarshal-api-schema`.
+  Types for each version live in `rackmarshal-api-schema`, which generates the published documents.
 - **OPA policies** — Rego policies that validate and authorize directives, evaluated by OPA embedded as
   a Go library in both services: `rackmarshal-provisioner` checks directives when they are written and before
   dispatch, and `rackmarshal-agent` re-checks them on the host before enforcing. OPA returns policy
@@ -473,8 +473,8 @@ Answers to this document's earlier open questions (2026-09-14 to 2026-09-15). Th
 - **OPA evaluation** — Embedded in both `rackmarshal-provisioner` and `rackmarshal-agent`, so a tampered or stale
   directive is still caught on the host.
 - **Desired-state schema** — Kubernetes-style `apiVersion`/`kind`, specified field by field in
-  [0020](0020-desired-state-kinds.md) and carried by Go structures in `rackmarshal-api-schema`, from which
-  the JSON Schemas and reference documentation are generated. Alpha/beta/stable stages and side-by-side
+  [0020](0020-desired-state-kinds.md) and carried by Go types in `rackmarshal-api-schema`, from which the
+  OpenAPI components and reference documentation are generated. Alpha/beta/stable stages and side-by-side
   versions as before.
 - **Tengo sandboxing** — Allowlisted pure standard-library modules plus Rackmarshal-provided functions, with an
   allocation cap and a timeout on every run; no `os` or file access on managed hosts.
@@ -581,7 +581,8 @@ None at present. Answered questions are recorded under
   published at `https://tuf-repo-cdn.sigstore.dev`.
 - [Kubernetes API versioning](https://kubernetes.io/docs/reference/using-api/#api-versioning) — model
   for `apiVersion`/`kind` desired-state documents.
-- [JSON Schema](https://json-schema.org/) — schema format published from `rackmarshal-api-schema`.
+- [OpenAPI 3.0.3](https://spec.openapis.org/oas/v3.0.3.html) — the document version generated from the
+  types in `rackmarshal-api-schema`.
 - [SPDX license identifiers](https://spdx.dev/learn/handling-license-info/) and
   [skywalking-eyes (license-eye)](https://github.com/apache/skywalking-eyes) — per-file license headers
   and their enforcement.

@@ -93,7 +93,7 @@ in each certificate's AIA and CRL distribution point extensions.
 No implicit or password grants, following the OAuth 2.0 security BCP
 ([RFC 9700](https://www.rfc-editor.org/rfc/rfc9700)). Redirect URIs match exactly.
 
-#### REST API sketch (`openapi/identity/v1alpha1/openapi.yaml`)
+#### REST API sketch (generated to `gen/openapi/identity/v1alpha1/openapi.yaml`)
 
 | Method and path                                              | Audience   | Auth           |
 |--------------------------------------------------------------|------------|----------------|

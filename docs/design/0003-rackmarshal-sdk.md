@@ -7,8 +7,9 @@
 - **Status:** Draft
 - **Owner:** Nathan Klick
 - **Date:** 2026-09-15
-- **Summary:** `rackmarshal-sdk` is a single Go module with a client generated from `rackmarshal-api-schema` for every
-  Rackmarshal API, plus the shared environment-identity code every component needs: SPIFFE ID checks,
+- **Summary:** `rackmarshal-sdk` is a single Go module with a client generated from the Go types in
+  `rackmarshal-api-schema` for every Rackmarshal API, plus the shared environment-identity code every
+  component needs: SPIFFE ID checks,
   mutual-TLS configuration, revocation checks, and certificate enrollment and renewal. It depends only on
   `rackmarshal-api-schema` and `golang.org/x/crypto`, and gets logging and tracing from the caller rather than
   depending on `rackmarshal-common`.
@@ -30,7 +31,8 @@ and certificates renew at two-thirds of their lifetime with OCSP and CRL checks
 
 **Goals**
 
-- An idiomatic Go client for every operation in `rackmarshal-api-schema`, regenerated on each schema release.
+- An idiomatic Go client for every operation declared in `rackmarshal-api-schema`, regenerated whenever
+  those types change.
 - One implementation of SPIFFE ID validation, Rackmarshal mutual TLS, revocation checks, enrollment, and
   renewal, reused by the CLI, agent, gateway, and every service.
 - A small dependency footprint that third-party users can accept.
@@ -105,7 +107,14 @@ The example is illustrative; names are proposals.
 
 #### Client generation
 
-Proposed: generate operations with oapi-codegen v2.8.0 `client: true`, importing models from
+[0002](0002-rackmarshal-api-schema.md) makes the Go types the contract and the OpenAPI documents a
+generated output, so the client is generated from those types rather than from a document. What that
+means for the generator is an open question there and here: oapi-codegen reads a document, so either the
+client is generated from the document each service emits, or from the operation declarations in
+`rackmarshal-api-schema` by a different generator. The dependency-footprint reasoning below holds either
+way and is the constraint that matters most.
+
+Proposed, pending that: generate operations with oapi-codegen v2.8.0 `client: true`, importing models from
 `rackmarshal-api-schema`, with **Rackmarshal-maintained `user-templates`** (an oapi-codegen output option). The
 templates replace calls into `github.com/oapi-codegen/runtime` with the SDK's `internal/params`, and emit
 `...All` iterator methods for list operations. `internal/params` supports only the parameter styles the
