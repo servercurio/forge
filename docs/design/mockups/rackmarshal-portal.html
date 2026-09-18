@@ -110,11 +110,30 @@
   .icon-btn:hover { background: var(--surface-sunken); }
   .icon-btn svg { width: 15px; height: 15px; }
 
-  input[type="text"], input[type="password"], select {
+  input[type="text"], input[type="password"], select, textarea {
     font: inherit; font-size: var(--text-sm); padding: 6px var(--space-3);
     border: 1px solid var(--border-strong); border-radius: var(--radius-md);
     background: var(--surface); color: var(--text); width: 100%;
   }
+  textarea { font-family: var(--font-mono); font-size: var(--text-xs); line-height: 1.6; resize: vertical; min-height: 150px; }
+  input[type="file"] { font: inherit; font-size: var(--text-xs); color: var(--text-muted); width: 100%; }
+  .dropzone {
+    border: 1px dashed var(--border-strong); border-radius: var(--radius-md);
+    padding: var(--space-4); display: flex; flex-direction: column; gap: var(--space-2);
+    background: var(--surface-sunken);
+  }
+  .validation { font-size: var(--text-xs); display: flex; align-items: flex-start; gap: var(--space-2); }
+  .validation.ok { color: var(--ok); }
+  .validation.bad { color: var(--critical); }
+  .res-item {
+    border: 1px solid var(--border); border-radius: var(--radius-md); padding: var(--space-3) var(--space-4);
+    display: flex; align-items: center; gap: var(--space-3); background: var(--surface);
+  }
+  .res-item .k { font-family: var(--font-mono); font-size: var(--text-xs); background: var(--surface-sunken); padding: 1px var(--space-2); border-radius: var(--radius-sm); }
+  .res-item .nm { font-weight: 500; font-size: var(--text-sm); }
+  .res-item .sp { font-family: var(--font-mono); font-size: var(--text-xs); color: var(--text-muted); }
+  .wiz-step { display: flex; flex-direction: column; gap: var(--space-4); }
+  .wiz-nav { display: flex; gap: var(--space-3); align-items: center; flex-wrap: wrap; }
 
   /* ---------------- pills ---------------- */
   .pill {
@@ -820,7 +839,8 @@
           <p>Desired state for <strong>northwind</strong>. Documents live in version control; the portal plans what the repository holds.</p>
         </div>
         <div class="spacer"></div>
-        <button class="btn btn-primary" type="button" data-form="directive">Upload document</button>
+        <button class="btn btn-secondary" type="button" data-form="directive">Upload document</button>
+        <button class="btn btn-primary" type="button" data-go="wizard">New directive set</button>
       </div>
       <div class="panel">
         <div class="table-wrap">
@@ -934,6 +954,105 @@
             <div class="ev"><time>2026-09-04</time><span class="mk" style="background:var(--action)"></span><span class="txt">Revision <span class="mono">39</span> &mdash; nginx 1.26 upgrade</span></div>
           </div>
         </div>
+      </div>
+    </div>
+
+
+    <!-- ---------------- WIZARD ---------------- -->
+    <div class="content" id="screen-wizard" hidden>
+      <div class="page-head">
+        <div>
+          <h1>New directive set</h1>
+          <p>Builds a valid document step by step. Nothing is written until you create it, and nothing
+             applies until you plan it.</p>
+        </div>
+        <div class="spacer"></div>
+        <button class="btn btn-secondary" type="button" data-go="directives">Cancel</button>
+      </div>
+
+      <div class="steps" id="wiz-steps">
+        <span class="step" data-state="now"><span class="n">1</span>Basics</span>
+        <span class="step-sep"></span>
+        <span class="step"><span class="n">2</span>Targeting</span>
+        <span class="step-sep"></span>
+        <span class="step"><span class="n">3</span>Resources</span>
+        <span class="step-sep"></span>
+        <span class="step"><span class="n">4</span>Review</span>
+      </div>
+
+      <!-- step 1 -->
+      <div class="panel wiz-step" id="wiz-1">
+        <div class="panel-head"><h3>Basics</h3></div>
+        <div class="panel-body" style="display:flex;flex-direction:column;gap:var(--space-4)">
+          <div class="field">
+            <label for="wz-name">Name</label>
+            <input id="wz-name" type="text" value="cache-tier" spellcheck="false">
+            <span class="hint" style="font-size:var(--text-xs);color:var(--text-muted)">Lowercase DNS label. Becomes <span class="mono">metadata.name</span>.</span>
+          </div>
+          <div class="field">
+            <label for="wz-mode">Mode</label>
+            <select id="wz-mode"><option value="enforce">enforce — apply changes</option><option value="audit">audit — observe and plan only</option></select>
+            <span class="hint" style="font-size:var(--text-xs);color:var(--text-muted)">Audit runs Observe and Plan and never applies, which is the safe way to introduce a new set.</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- step 2 -->
+      <div class="panel wiz-step" id="wiz-2" hidden>
+        <div class="panel-head"><h3>Targeting</h3><div class="spacer"></div><span class="pill s-in_sync" id="wz-match"><span class="dot"></span>0 endpoints</span></div>
+        <div class="panel-body" style="display:flex;flex-direction:column;gap:var(--space-4)">
+          <div class="field">
+            <label for="wz-label">Label selector</label>
+            <input id="wz-label" type="text" value="role=cache" spellcheck="false" placeholder="role=web">
+            <span class="hint" style="font-size:var(--text-xs);color:var(--text-muted)">Becomes <span class="mono">spec.target.selector.matchLabels</span>. Matching is evaluated live against this tenant.</span>
+          </div>
+          <div id="wz-matched" style="display:flex;flex-wrap:wrap;gap:var(--space-2)"></div>
+        </div>
+      </div>
+
+      <!-- step 3 -->
+      <div class="panel wiz-step" id="wiz-3" hidden>
+        <div class="panel-head"><h3>Resources</h3><div class="spacer"></div><span class="muted mono" style="font-size:var(--text-xs)" id="wz-rescount">0 added</span></div>
+        <div class="panel-body" style="display:flex;flex-direction:column;gap:var(--space-4)">
+          <div id="wz-reslist" style="display:flex;flex-direction:column;gap:var(--space-2)"></div>
+          <div class="two-col" style="align-items:end">
+            <div class="field">
+              <label for="wz-rkind">Kind</label>
+              <select id="wz-rkind"><option>File</option><option>Package</option><option>Service</option></select>
+            </div>
+            <div class="field">
+              <label for="wz-rname">Name</label>
+              <input id="wz-rname" type="text" placeholder="redis-conf" spellcheck="false">
+            </div>
+          </div>
+          <div class="field">
+            <label for="wz-rspec" id="wz-rspec-label">Path</label>
+            <input id="wz-rspec" type="text" placeholder="/etc/redis/redis.conf" spellcheck="false">
+          </div>
+          <button class="btn btn-secondary" type="button" id="wz-add" style="align-self:flex-start">Add resource</button>
+        </div>
+      </div>
+
+      <!-- step 4 -->
+      <div class="panel wiz-step" id="wiz-4" hidden>
+        <div class="panel-head"><h3>Review</h3><div class="spacer"></div><span class="validation ok" id="wz-valid">Valid</span></div>
+        <div class="diff">
+          <div class="diff-head"><span class="path" id="wz-filename">cache-tier.yaml</span></div>
+          <pre id="wz-yaml"></pre>
+        </div>
+        <div class="panel-body">
+          <p class="muted" style="font-size:var(--text-xs)">
+            Two sets targeting one endpoint with the same kind and <span class="mono">metadata.name</span>
+            are a conflict, reported at plan time rather than resolved by last writer wins. Creating this
+            document does not apply it &mdash; plan it next.
+          </p>
+        </div>
+      </div>
+
+      <div class="wiz-nav">
+        <button class="btn btn-secondary" type="button" id="wz-back" disabled>Back</button>
+        <button class="btn btn-primary" type="button" id="wz-next">Next</button>
+        <span class="muted" style="font-size:var(--text-xs)" id="wz-hint">Step 1 of 4</span>
       </div>
     </div>
 
@@ -1180,6 +1299,7 @@
   <button type="button" data-go="facts">Facts</button>
   <button type="button" data-go="directives">Directives</button>
   <button type="button" data-go="directive">Document</button>
+  <button type="button" data-go="wizard">New (wizard)</button>
   <button type="button" data-go="plan">Plan</button>
   <button type="button" data-go="reconciliations">Reconciliations</button>
   <button type="button" data-go="agents">Agents</button>
@@ -1194,7 +1314,7 @@
     var root = document.documentElement;
     var STANDALONE = { login: "screen-login", callback: "screen-callback" };
     var APP = ["overview", "endpoints", "endpoint", "facts", "directives", "directive",
-               "plan", "reconciliations", "agents", "enrollment", "tokens",
+               "wizard", "plan", "reconciliations", "agents", "enrollment", "tokens",
                "members", "settings", "stub"];
 
     function show(name) {
@@ -1275,17 +1395,19 @@
       },
       directive: {
         title: "Upload document", submit: "Validate and add",
-        note: "Validated against its JSON Schema before it reaches the gateway, so a malformed file fails here with a readable message.",
+        note: "The document is validated against its JSON Schema here, so a malformed file fails with a readable message instead of a 422 from a service you never see.",
         fields: [
-          { id: "name", label: "Name", value: "", placeholder: "cache-tier" },
-          { id: "kind", label: "Kind", type: "select", options: ["DirectiveSet", "Policy", "Script", "DeviceConnection"] },
-          { id: "target", label: "Targets", value: "", placeholder: "role=cache" }
+          { id: "file", label: "Document", type: "file" },
+          { id: "body", label: "or paste the YAML", type: "textarea",
+            value: "apiVersion: rackmarshal.servercurio.com/v1alpha1\nkind: DirectiveSet\nmetadata:\n  name: cache-tier\nspec:\n  mode: enforce\n  target:\n    selector:\n      matchLabels:\n        role: cache\n  resources: []" }
         ],
+        validate: true,
         target: "#directive-table tbody",
         row: function (v) {
-          return "<td class='name'>" + esc(v.name || "untitled") + "<span class='sub'>uploaded just now</span></td>" +
-                 "<td class='mono'>" + esc(v.kind) + "</td><td class='mono'>1</td>" +
-                 "<td><span class='label-chip'>" + esc(v.target || "all") + "</span></td>" +
+          var d = parseDoc(v.body || "");
+          return "<td class='name'>" + esc(d.name || "untitled") + "<span class='sub'>uploaded just now</span></td>" +
+                 "<td class='mono'>" + esc(d.kind || "DirectiveSet") + "</td><td class='mono'>1</td>" +
+                 "<td><span class='label-chip'>" + esc(d.target || "all") + "</span></td>" +
                  "<td class='mono'>now</td>";
         }
       },
@@ -1305,6 +1427,38 @@
       return String(t == null ? "" : t).replace(/[&<>"']/g, function (m) {
         return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[m];
       });
+    }
+
+    // a deliberately small stand-in for the JSON Schema check 0017 promises
+    function parseDoc(text) {
+      var out = {};
+      (text || "").split("\n").forEach(function (line) {
+        var m;
+        if ((m = line.match(/^\s*kind:\s*(\S+)/)) && !out.kind) out.kind = m[1];
+        if ((m = line.match(/^\s*name:\s*(\S+)/)) && !out.name) out.name = m[1];
+        if ((m = line.match(/^\s*apiVersion:\s*(\S+)/))) out.apiVersion = m[1];
+        if ((m = line.match(/^\s*mode:\s*(\S+)/))) out.mode = m[1];
+        if ((m = line.match(/^\s{8}(\w[\w.\-]*):\s*(\S+)/)) && !out.target) out.target = m[1] + "=" + m[2];
+      });
+      return out;
+    }
+    function validateDoc(ta) {
+      var v = document.getElementById(ta.id + "-v");
+      if (!v) return true;
+      var d = parseDoc(ta.value), errs = [];
+      if (!d.apiVersion) errs.push("apiVersion is required");
+      else if (d.apiVersion.indexOf("rackmarshal.servercurio.com/") !== 0) errs.push("apiVersion must be in the rackmarshal.servercurio.com group");
+      if (!d.kind) errs.push("kind is required");
+      if (!d.name) errs.push("metadata.name is required");
+      if (d.kind === "DirectiveSet" && d.mode && ["enforce", "audit"].indexOf(d.mode) === -1) errs.push("spec.mode must be enforce or audit");
+      if (errs.length) {
+        v.className = "validation bad";
+        v.textContent = errs.length + " problem" + (errs.length > 1 ? "s" : "") + ": " + errs.join("; ");
+        return false;
+      }
+      v.className = "validation ok";
+      v.textContent = "Valid " + d.kind + " \u00b7 " + d.name;
+      return true;
     }
 
     var activeForm = null;
@@ -1327,9 +1481,27 @@
                  "<select id='" + id + "' style=\"font:inherit;font-size:var(--text-sm);padding:6px var(--space-3);border:1px solid var(--border-strong);border-radius:var(--radius-md);background:var(--surface);color:var(--text)\">" +
                  fd.options.map(function (o) { return "<option>" + esc(o) + "</option>"; }).join("") + "</select></div>";
         }
+        if (fd.type === "file") {
+          return "<div class='field'><label for='" + id + "'>" + esc(fd.label) + "</label>" +
+                 "<div class='dropzone'><input id='" + id + "' type='file' accept='.yaml,.yml,.json'>" +
+                 "<span class='muted' style='font-size:var(--text-xs)'>YAML or JSON, up to 1 MiB. Alias nodes and unknown top-level fields are rejected, as at admission.</span></div></div>";
+        }
+        if (fd.type === "textarea") {
+          return "<div class='field'><label for='" + id + "'>" + esc(fd.label) + "</label>" +
+                 "<textarea id='" + id + "' spellcheck='false'>" + esc(fd.value || "") + "</textarea>" +
+                 "<div class='validation' id='" + id + "-v'></div></div>";
+        }
         return "<div class='field'><label for='" + id + "'>" + esc(fd.label) + "</label>" +
                "<input id='" + id + "' type='text' value='" + esc(fd.value || "") + "' placeholder='" + esc(fd.placeholder || "") + "' spellcheck='false'></div>";
       }).join("");
+      if (f.validate) {
+        var ta = wrap.querySelector("textarea"), fi = wrap.querySelector("input[type=file]");
+        if (ta) { ta.addEventListener("input", function () { validateDoc(ta); }); validateDoc(ta); }
+        if (fi) fi.addEventListener("change", function () {
+          var n = this.files && this.files[0] ? this.files[0].name : "";
+          if (n && ta) { ta.value = "# loaded from " + n + "\n" + ta.value; validateDoc(ta); }
+        });
+      }
       document.getElementById("formscrim").hidden = false;
       var first = wrap.querySelector("input, select");
       if (first) first.focus();
@@ -1338,6 +1510,10 @@
     document.getElementById("form-submit").addEventListener("click", function () {
       var f = FORMS[activeForm];
       if (!f) return;
+      if (f.validate) {
+        var ta0 = document.querySelector("#form-fields textarea");
+        if (ta0 && !validateDoc(ta0)) return;
+      }
       var v = {};
       f.fields.forEach(function (fd) {
         var el = document.getElementById("ff-" + fd.id);
@@ -1463,6 +1639,138 @@
       try { localStorage.setItem("rackmarshal-proto-theme", next); } catch (e) { /* private mode */ }
     });
 
+    // ---------- guided directive wizard ----------
+    var ENDPOINTS = [
+      { name: "web-01", labels: { role: "web" } },
+      { name: "web-02", labels: { role: "web" } },
+      { name: "db-02", labels: { role: "db" } },
+      { name: "k8s-node-03", labels: { role: "compute" } },
+      { name: "cache-01", labels: { role: "cache" } },
+      { name: "edge-fw-01", labels: { role: "edge" } }
+    ];
+    var SPEC_FIELD = { File: ["Path", "/etc/redis/redis.conf"], Package: ["Package name", "redis-server"], Service: ["Service name", "redis"] };
+    var wizStep = 1, wizRes = [];
+
+    function wizMatched() {
+      var raw = (document.getElementById("wz-label") || {}).value || "";
+      var parts = raw.split("=");
+      if (parts.length !== 2 || !parts[0].trim() || !parts[1].trim()) return [];
+      var k = parts[0].trim(), val = parts[1].trim();
+      return ENDPOINTS.filter(function (e) { return e.labels[k] === val; });
+    }
+    function wizRenderMatch() {
+      var m = wizMatched(), pill = document.getElementById("wz-match"), box = document.getElementById("wz-matched");
+      pill.className = "pill " + (m.length ? "s-in_sync" : "s-unknown");
+      pill.innerHTML = "<span class='dot'></span>" + m.length + (m.length === 1 ? " endpoint" : " endpoints");
+      box.innerHTML = m.length
+        ? m.map(function (e) { return "<span class='label-chip'>" + esc(e.name) + "</span>"; }).join("")
+        : "<span class='muted' style='font-size:var(--text-xs)'>No endpoint carries that label. The set would be created but apply to nothing.</span>";
+    }
+    function wizRenderRes() {
+      var list = document.getElementById("wz-reslist");
+      document.getElementById("wz-rescount").textContent = wizRes.length + " added";
+      list.innerHTML = wizRes.length ? "" : "<span class='muted' style='font-size:var(--text-xs)'>No resources yet. A set with none is valid but does nothing.</span>";
+      wizRes.forEach(function (r, i) {
+        var d = document.createElement("div");
+        d.className = "res-item";
+        d.innerHTML = "<span class='k'>" + esc(r.kind) + "</span><span class='nm'>" + esc(r.name) +
+                      "</span><span class='sp'>" + esc(r.spec) + "</span>" +
+                      "<span class='spacer' style='margin-left:auto'></span>" +
+                      "<button class='link-btn' type='button' data-rmres='" + i + "'>Remove</button>";
+        list.appendChild(d);
+      });
+    }
+    function wizYaml() {
+      var name = (document.getElementById("wz-name") || {}).value || "unnamed";
+      var mode = (document.getElementById("wz-mode") || {}).value || "enforce";
+      var raw = ((document.getElementById("wz-label") || {}).value || "role=web").split("=");
+      var y = "apiVersion: rackmarshal.servercurio.com/v1alpha1\n" +
+              "kind: DirectiveSet\n" +
+              "metadata:\n  name: " + name + "\nspec:\n  mode: " + mode +
+              "\n  target:\n    selector:\n      matchLabels:\n        " +
+              (raw[0] || "role").trim() + ": " + (raw[1] || "web").trim() + "\n  resources:";
+      if (!wizRes.length) return y + " []\n";
+      wizRes.forEach(function (r) {
+        var key = r.kind === "File" ? "path" : "name";
+        y += "\n    - apiVersion: rackmarshal.servercurio.com/v1alpha1\n" +
+             "      kind: " + r.kind + "\n" +
+             "      metadata: { name: " + r.name + " }\n" +
+             "      spec:\n        " + key + ": " + r.spec;
+        if (r.kind === "Service") y += "\n        state: started\n        enabled: true";
+        if (r.kind === "File") y += "\n        mode: \"0644\"";
+      });
+      return y + "\n";
+    }
+    function wizShow(n) {
+      wizStep = n;
+      [1, 2, 3, 4].forEach(function (i) { document.getElementById("wiz-" + i).hidden = i !== n; });
+      document.querySelectorAll("#wiz-steps .step").forEach(function (el, i) {
+        el.removeAttribute("data-state");
+        if (i + 1 < n) el.setAttribute("data-state", "done");
+        if (i + 1 === n) el.setAttribute("data-state", "now");
+      });
+      document.getElementById("wz-back").disabled = n === 1;
+      document.getElementById("wz-next").textContent = n === 4 ? "Create document" : "Next";
+      document.getElementById("wz-hint").textContent = "Step " + n + " of 4";
+      if (n === 2) wizRenderMatch();
+      if (n === 3) wizRenderRes();
+      if (n === 4) {
+        document.getElementById("wz-yaml").textContent = wizYaml();
+        document.getElementById("wz-filename").textContent =
+          ((document.getElementById("wz-name") || {}).value || "unnamed") + ".yaml";
+        var v = document.getElementById("wz-valid"), m = wizMatched();
+        v.className = "validation " + (m.length ? "ok" : "bad");
+        v.textContent = m.length ? "Valid \u00b7 " + m.length + " endpoint" + (m.length === 1 ? "" : "s") + " targeted"
+                                 : "Valid, but targets nothing";
+      }
+    }
+
+    document.addEventListener("click", function (e) {
+      var rm = e.target.closest("[data-rmres]");
+      if (rm) { wizRes.splice(+rm.dataset.rmres, 1); wizRenderRes(); return; }
+      if (e.target.id === "wz-add") {
+        var k = document.getElementById("wz-rkind").value;
+        var nm = document.getElementById("wz-rname").value.trim();
+        var sp = document.getElementById("wz-rspec").value.trim();
+        if (!nm || !sp) return;
+        wizRes.push({ kind: k, name: nm, spec: sp });
+        document.getElementById("wz-rname").value = "";
+        document.getElementById("wz-rspec").value = "";
+        wizRenderRes();
+        return;
+      }
+      if (e.target.id === "wz-back") { if (wizStep > 1) wizShow(wizStep - 1); return; }
+      if (e.target.id === "wz-next") {
+        if (wizStep < 4) { wizShow(wizStep + 1); return; }
+        var name = document.getElementById("wz-name").value || "unnamed";
+        var raw = document.getElementById("wz-label").value || "role=web";
+        var tb = document.querySelector("#directive-table tbody");
+        if (tb) {
+          var tr = document.createElement("tr");
+          tr.innerHTML = "<td class='name'>" + esc(name) + "<span class='sub'>created just now \u00b7 " +
+                         wizRes.length + " resource" + (wizRes.length === 1 ? "" : "s") + "</span></td>" +
+                         "<td class='mono'>DirectiveSet</td><td class='mono'>1</td>" +
+                         "<td><span class='label-chip'>" + esc(raw) + "</span></td><td class='mono'>now</td>";
+          tb.insertBefore(tr, tb.firstChild);
+        }
+        wizRes = []; wizShow(1);
+        show("directives");
+      }
+    });
+
+    document.addEventListener("input", function (e) {
+      if (e.target.id === "wz-label") wizRenderMatch();
+      if (e.target.id === "wz-rkind") return;
+    });
+    document.addEventListener("change", function (e) {
+      if (e.target.id === "wz-rkind") {
+        var f = SPEC_FIELD[e.target.value];
+        document.getElementById("wz-rspec-label").textContent = f[0];
+        document.getElementById("wz-rspec").placeholder = f[1];
+      }
+    });
+
+    wizShow(1);
     show("overview");
   })();
 </script>
