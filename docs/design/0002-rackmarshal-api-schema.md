@@ -7,10 +7,12 @@
 - **Status:** Draft
 - **Owner:** Nathan Klick
 - **Date:** 2026-09-15
-- **Summary:** `rackmarshal-api-schema` is the single source of truth for Rackmarshal's HTTP API contracts, written
-  first in OpenAPI 3.1, and for desired-state schemas in JSON Schema 2020-12. It publishes the documents,
-  generated Go models with no third-party dependencies, and the lint and breaking-change checks that
-  every other repository relies on.
+- **Summary:** `rackmarshal-api-schema` is the single source of truth for Rackmarshal's HTTP API contracts in
+  OpenAPI 3.1, and it holds the Go structures for desired-state kinds. Those structures are authoritative:
+  the JSON Schema files, the OpenAPI component schemas for kinds, and the reference documentation are all
+  generated from them. It publishes the documents, generated Go models with no third-party dependencies,
+  and the lint and breaking-change checks that every other repository relies on. The kinds themselves are
+  specified in [0020](0020-desired-state-kinds.md), which this document does not duplicate.
 
 > An initial draft with concrete proposals. Formats, tools, layout, and policies are proposals to argue
 > with, bounded by the [Resolved decisions](0001-project-repositories.md#resolved-decisions) in 0001.
@@ -49,8 +51,10 @@ repository.
 ### Responsibilities
 
 - One OpenAPI 3.1 document per service per API version, plus a shared components document.
-- One JSON Schema 2020-12 file per desired-state `kind` per `apiVersion`.
-- Generated Go models for API documents; Go types for desired-state kinds.
+- One JSON Schema 2020-12 file per desired-state `kind` per `apiVersion`, generated from the Go
+  structures rather than written by hand.
+- Generated Go models for API documents; hand-written Go structures for desired-state kinds, written
+  once from [0020](0020-desired-state-kinds.md) and authoritative thereafter.
 - Embedded access to every document through `embed.FS`, so services serve the exact contract.
 - The Rackmarshal vacuum ruleset, the oasdiff compatibility policy, examples, and drift checks.
 
@@ -71,9 +75,11 @@ contract over mutual TLS; there is no service-to-service gRPC. Rationale:
 - **Keeps gRPC out of services.** 0001's
   [telemetry decision](0001-project-repositories.md#logging-and-telemetry-rackmarshal-common) went out of its
   way to avoid gRPC; it stays confined to `rackmarshal-agent` and plugins.
-- **Contract before code.** `go-echo-starter` generates OpenAPI 3.0 from route metadata after the code
-  exists. `rackmarshal-sdk`, the gateway, and the first services are built in parallel, so the contract must
-  come first.
+- **One artefact wins, and it is the one that compiles.** For desired-state kinds the Go structures are
+  authoritative and the schemas, OpenAPI components, and reference documentation are generated from them
+  ([0020](0020-desired-state-kinds.md)). A hand-written schema and a hand-written type can disagree;
+  generated ones cannot. The structures live here rather than in any service, so `rackmarshal-sdk`, the
+  gateway, and the first services still start in parallel — from a Go package instead of a YAML file.
 
 #### Repository layout
 
@@ -84,14 +90,14 @@ rackmarshal-api-schema/
 │   ├── identity/v1alpha1/openapi.yaml
 │   ├── inventory/v1alpha1/openapi.yaml
 │   └── provisioner/v1alpha1/openapi.yaml
-├── schemas/rackmarshal.servercurio.com/v1alpha1/<kind>.schema.json
+├── schemas/rackmarshal.servercurio.com/v1alpha1/<kind>.schema.json   # generated from pkg/desiredstate
 ├── examples/                            # valid and invalid samples for every operation and kind
 ├── pkg/
 │   ├── openapi/                         # embed.FS; Document(service, version string) ([]byte, error)
 │   ├── schemas/                         # embed.FS; Schema(apiVersion, kind string) ([]byte, error)
 │   ├── common/v1/                       # package commonv1 (generated)
 │   ├── inventory/v1alpha1/              # package inventoryv1alpha1 (generated)
-│   └── desiredstate/v1alpha1/           # package desiredstatev1alpha1 (hand-written kinds)
+│   └── desiredstate/v1alpha1/           # package desiredstatev1alpha1 (authoritative; see 0020)
 ├── codegen/                             # one oapi-codegen config per document
 ├── rules/rackmarshal.vacuum.yaml              # Spectral-compatible ruleset
 ├── conformance/                         # nested Go module: validation and round-trip tests
@@ -263,8 +269,10 @@ None at runtime. Generator settings live in `codegen/`, and lint rules in `rules
   formats absent, problem responses referenced, and naming rules.
 - **Examples** — every file in `examples/` is validated against its operation or kind. Valid samples must
   pass and invalid samples must fail with the expected pointer.
-- **Round trip** — desired-state examples decode into the Go types, re-encode, and still validate, which
-  catches fields missing from the hand-written types.
+- **Round trip** — desired-state examples decode into the Go structures, re-encode, and still validate.
+- **Generated artefact drift** — the JSON Schema files, the OpenAPI component schemas for kinds, and the
+  generated reference documentation are regenerated from the Go structures in CI, and the build fails on
+  any diff, so no generated artefact can disagree with the structures it came from.
 - **Drift and compatibility** — regenerated models must match committed code, and oasdiff must pass.
 - **Dependency budget** — a test fails if the root `go.mod` gains any requirement.
 
@@ -278,7 +286,10 @@ None at runtime. Generator settings live in `codegen/`, and lint rules in `rules
   protobuf toolchain such as [Buf](https://buf.build/docs/), and serves third-party REST clients worse.
   Worth revisiting if internal call volume makes JSON costly.
 - **Code-first OpenAPI in each service** (the starter's generator) — the contract would appear only after
-  implementation, split across repositories, so `rackmarshal-sdk` could not come first.
+  implementation, split across repositories, so `rackmarshal-sdk` could not come first. Still rejected *for
+  service APIs*, which stay contract-first here. Desired-state kinds are the deliberate exception: their
+  Go structures live in this repository rather than in a service, so generating from them costs none of
+  the parallelism this entry was protecting. [0020](0020-desired-state-kinds.md) sets that direction.
 - **OpenAPI 3.0.3** — the broadest tool support and the starter's current output, but its schema dialect
   differs from JSON Schema 2020-12, which would split the API and desired-state schema styles.
 - **[ogen](https://github.com/ogen-go/ogen)** — its `go.mod` (v1.24.0) requires OpenTelemetry, zap,

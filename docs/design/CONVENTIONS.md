@@ -24,9 +24,10 @@ convention says so under Alternatives considered and links the convention it bre
 | 0008 | `rackmarshal-gateway`        | 0015 | `rackmarshal-plugin-starter`   |
 | 0016 | *web UI architecture*  | 0018 | `rackmarshal-console`          |
 | 0017 | `rackmarshal-portal`         | 0019 | *brand identity*         |
+| 0020 | *desired-state kinds*  |      |                          |
 
-0016 and 0019 describe no single repository, so they are named for their subject rather than for a
-module, as 0001 is.
+0016, 0019, and 0020 describe no single repository, so they are named for their subject rather than for
+a module, as 0001 is.
 
 - File `NNNN-rackmarshal-<name>.md`, title `# NNNN — rackmarshal-<name>`, header and sections from
   [`TEMPLATE.md`](TEMPLATE.md). Proposal subsections, in order, as they apply: Responsibilities;
@@ -46,9 +47,12 @@ module, as 0001 is.
 ## API contract and style
 
 - **One contract format.** Every Rackmarshal HTTP API is an OpenAPI 3.1 document in `rackmarshal-api-schema`
-  (`openapi/<service>/<version>/openapi.yaml`); desired-state kinds are JSON Schema 2020-12 files
-  (`schemas/<group>/<version>/<kind>.schema.json`). Contracts come first; code is generated from or
-  tested against them.
+  (`openapi/<service>/<version>/openapi.yaml`), written first; service code is generated from or tested
+  against it. Desired-state kinds go the other way: their Go structures in
+  `pkg/desiredstate/<version>` are authoritative, and the JSON Schema files
+  (`schemas/<group>/<version>/<kind>.schema.json`), the OpenAPI component schemas for kinds, and the
+  reference documentation are generated from them and drift-checked in CI.
+  [0020](0020-desired-state-kinds.md) specifies the kinds and sets that direction.
 - **REST + JSON, internal and external.** Services call each other over the same contract with mutual
   TLS. There is no service-to-service gRPC; gRPC appears only between `rackmarshal-agent` and plugins, whose
   go-plugin protobuf contract lives in `rackmarshal-agent-plugin-sdk`.

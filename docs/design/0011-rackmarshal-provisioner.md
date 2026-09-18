@@ -56,8 +56,9 @@ through `rackmarshal-gateway`'s mutual-TLS agent ingress. Both paths converge ag
 
 #### Document model
 
-Proposed kinds in `rackmarshal.servercurio.com/v1alpha1`, each with a JSON Schema at
-`schemas/rackmarshal.servercurio.com/v1alpha1/<kind>.schema.json` in [0002](0002-rackmarshal-api-schema.md):
+Kinds in `rackmarshal.servercurio.com/v1alpha1`. [0020](0020-desired-state-kinds.md) specifies every field;
+the JSON Schema at `schemas/rackmarshal.servercurio.com/v1alpha1/<kind>.schema.json` in
+[0002](0002-rackmarshal-api-schema.md) is generated from the Go structures rather than written by hand:
 
 | Kind               | Purpose                                                                         |
 |--------------------|---------------------------------------------------------------------------------|

@@ -472,8 +472,10 @@ Answers to this document's earlier open questions (2026-09-14 to 2026-09-15). Th
   the merged playbooks, keeping deployment credentials out of CI.
 - **OPA evaluation** — Embedded in both `rackmarshal-provisioner` and `rackmarshal-agent`, so a tampered or stale
   directive is still caught on the host.
-- **Desired-state schema** — Kubernetes-style `apiVersion`/`kind` with JSON Schemas published from
-  `rackmarshal-api-schema`, supporting alpha/beta/stable stages and side-by-side versions.
+- **Desired-state schema** — Kubernetes-style `apiVersion`/`kind`, specified field by field in
+  [0020](0020-desired-state-kinds.md) and carried by Go structures in `rackmarshal-api-schema`, from which
+  the JSON Schemas and reference documentation are generated. Alpha/beta/stable stages and side-by-side
+  versions as before.
 - **Tengo sandboxing** — Allowlisted pure standard-library modules plus Rackmarshal-provided functions, with an
   allocation cap and a timeout on every run; no `os` or file access on managed hosts.
 - **Trust zones** — A dedicated mutual-TLS agent ingress on `rackmarshal-gateway`, with per-agent certificates
