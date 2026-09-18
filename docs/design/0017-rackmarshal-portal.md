@@ -30,14 +30,14 @@ change, and approving it — are exactly the ones that benefit from a rendered p
 - Make `plan` a first-class screen. 0011 already returns affected endpoints and a diff; nothing
   renders it.
 - Let a tenant administrator enroll hosts and manage their own access without a platform administrator.
+- Make a valid directive set reachable without knowing the schema, through a guided flow that shows what
+  each choice targets before anything is written.
 - Never show, or allow action on, another tenant's data.
 
 **Non-goals**
 
 - Platform administration — tenants, environments, PKI, and cross-tenant agents are
   [0018](0018-rackmarshal-console.md).
-- Authoring desired state from scratch in the browser. Directive sets are files under version control;
-  the portal reads them, validates uploads, and plans them.
 - An API. The portal consumes the gateway through `rackmarshal-sdk` and exposes nothing of its own.
 - Replacing `rackmarshal-cli` for automation. Anything scriptable stays scriptable there.
 
@@ -47,6 +47,8 @@ change, and approving it — are exactly the ones that benefit from a rendered p
 
 - Render the tenant's endpoints, their facts, labels, history, and drift state from `rackmarshal-inventory`.
 - Render desired state from `rackmarshal-provisioner`: directive sets, policies, scripts, device connections.
+- Accept a document by file or paste, validate it against its JSON Schema before it leaves the browser,
+  and author a new `DirectiveSet` through a guided flow.
 - Run and display plans, and apply them after explicit confirmation.
 - Show reconciliation and enforcement history, including failures with the reason.
 - Let tenant administrators create, list, and revoke enrollment tokens and API tokens for their tenant.
@@ -63,6 +65,7 @@ change, and approving it — are exactly the ones that benefit from a rendered p
 | `/endpoints/{id}`           | Detail: facts, labels, history, applied generation, conditions  | member     |
 | `/endpoints/{id}/facts`     | Full fact set, searchable, as reported by the agent             | member     |
 | `/directives`               | Directive sets, policies, scripts, device connections           | member     |
+| `/directives/new`           | Guided flow: basics, targeting, resources, review                | member     |
 | `/directives/{id}`          | Document detail with revision history                           | member     |
 | `/directives/{id}/plan`     | Dry run: affected endpoints and diff                            | member     |
 | `/reconciliations`          | Queue and history, with per-endpoint outcome                    | member     |
@@ -188,9 +191,16 @@ image, Helm chart, deb/rpm, NSIS installer. No cgo, so it cross-compiles normall
 - **Folding the portal into `rackmarshal-console` with RBAC** — cheaper, and rejected in 0016 for blast radius.
   Worth restating here: the console issues enrollment tokens and approves service enrollments, and those
   controls should not share a process with the tenant-facing application.
-- **Authoring desired state in the browser** — an editor with schema completion is appealing and would
-  make the portal self-sufficient. Rejected for now because directive sets belong in version control,
-  where review and history already work; the portal plans what the repository holds.
+- **Leaving authoring out entirely** — the position this document originally took: directive sets belong
+  in version control, where review and history already work, so the portal would only read and plan them.
+  Reversed, because it confused two things. Where a document *lives* is version control either way; what
+  was actually missing was a way to produce a valid one without already knowing the schema. The guided
+  flow writes a document the same shape a repository holds, and the upload path takes an existing file,
+  so neither bypasses review — a created set still has to be planned and applied like any other.
+- **A free-form YAML editor with schema completion** — more flexible than a wizard and much closer to
+  what an experienced operator wants. Not chosen as the only route, because it helps least exactly where
+  help is needed: someone who does not yet know the shape. The upload path accepts hand-written YAML for
+  the experienced case, and the wizard covers the other.
 - **A charting library for the overview** — `chart.js` or similar would be faster to build than inline
   SVG. Rejected to keep the CSP at `script-src 'self'` with no extra origin and the module graph flat.
 - **Server-sent events for live status** — better than polling at scale, and an open question in 0016
